@@ -10,15 +10,17 @@ class TaskModel {
   final double? latitude;
   final double? longitude;
   final bool isCompleted;
-  
-  // Nossos 3 novos atributos matadores
-  final String? reminderType; // 'datetime' ou 'location' ou null
-  final DateTime? dueDate; // Data de expiração/alarme
-  final String? locationTrigger; // 'arrival' ou 'departure' ou null
 
-  // Identidade e Grupos
+  final String? reminderType; // 'datetime' ou 'location' ou null
+  final DateTime? dueDate;
+  final String? locationTrigger;
+
   final String? ownerId;
   final String? groupId;
+  /// Criador da tarefa (útil em tarefas de grupo).
+  final String? createdBy;
+  /// Responsáveis (subset de membros do grupo); vazio fora de grupo ou sem atribuição.
+  final List<String> assigneeIds;
 
   TaskModel({
     required this.id,
@@ -32,11 +34,10 @@ class TaskModel {
     this.locationTrigger,
     this.ownerId,
     this.groupId,
+    this.createdBy,
+    this.assigneeIds = const [],
   });
 
-  /// Cria uma cópia imutável com campos substituídos.
-  /// Para limpar um campo nullable, passe explicitamente `null`.
-  /// Para manter o valor atual, omita o parâmetro.
   TaskModel copyWith({
     String? id,
     String? title,
@@ -49,6 +50,8 @@ class TaskModel {
     Object? locationTrigger = _unset,
     Object? ownerId = _unset,
     Object? groupId = _unset,
+    Object? createdBy = _unset,
+    Object? assigneeIds = _unset,
   }) {
     return TaskModel(
       id: id ?? this.id,
@@ -62,6 +65,8 @@ class TaskModel {
       locationTrigger: identical(locationTrigger, _unset) ? this.locationTrigger : locationTrigger as String?,
       ownerId: identical(ownerId, _unset) ? this.ownerId : ownerId as String?,
       groupId: identical(groupId, _unset) ? this.groupId : groupId as String?,
+      createdBy: identical(createdBy, _unset) ? this.createdBy : createdBy as String?,
+      assigneeIds: identical(assigneeIds, _unset) ? this.assigneeIds : assigneeIds as List<String>,
     );
   }
 
@@ -78,6 +83,8 @@ class TaskModel {
       'locationTrigger': locationTrigger,
       'ownerId': ownerId,
       'groupId': groupId,
+      'createdBy': createdBy,
+      'assigneeIds': assigneeIds,
     };
   }
 }

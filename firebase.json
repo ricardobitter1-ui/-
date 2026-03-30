@@ -1,1 +1,26 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"exm-to-do","appId":"1:104211948965:android:2518da872d57878fedf44c","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"exm-to-do","configurations":{"android":"1:104211948965:android:2518da872d57878fedf44c","ios":"1:104211948965:ios:39b66479127b406aedf44c"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "exm-to-do",
+          "appId": "1:104211948965:android:2518da872d57878fedf44c",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "exm-to-do",
+          "configurations": {
+            "android": "1:104211948965:android:2518da872d57878fedf44c",
+            "ios": "1:104211948965:ios:39b66479127b406aedf44c"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

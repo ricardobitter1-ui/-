@@ -1,0 +1,222 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function groupDoc(gid) {
+      return get(/databases/$(database)/documents/groups/$(gid)).data;
+    }
+
+    function isGroupMember(gid) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/groups/$(gid))
+        && request.auth.uid in groupDoc(gid).members;
+    }
+
+    function isGroupAdmin(gid) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/groups/$(gid))
+        && (
+          (groupDoc(gid).keys().hasAll(['admins'])
+            && groupDoc(gid).admins is list
+            && request.auth.uid in groupDoc(gid).admins)
+          || (!groupDoc(gid).keys().hasAll(['admins'])
+            && request.auth.uid == groupDoc(gid).ownerId)
+        );
+    }
+
+    function isPersonalGroup(gid) {
+      return exists(/databases/$(database)/documents/groups/$(gid))
+        && groupDoc(gid).get('isPersonal', false) == true;
+    }
+
+    function invitePathForSelf(gid) {
+      return /databases/$(database)/documents/groupInvites/$(gid + '_' + request.auth.uid);
+    }
+
+    function assigneesOkForGroup(gid, task) {
+      return !('assigneeIds' in task)
+        || task.assigneeIds == null
+        || task.assigneeIds.size() == 0
+        || assigneesSubsetMembers(gid, task.assigneeIds);
+    }
+
+    // Até 10 responsáveis (sem loops nas rules)
+    function assigneesSubsetMembers(gid, a) {
+      return a is list
+        && a.size() <= 10
+        && (a.size() < 1 || a[0] in groupDoc(gid).members)
+        && (a.size() < 2 || a[1] in groupDoc(gid).members)
+        && (a.size() < 3 || a[2] in groupDoc(gid).members)
+        && (a.size() < 4 || a[3] in groupDoc(gid).members)
+        && (a.size() < 5 || a[4] in groupDoc(gid).members)
+        && (a.size() < 6 || a[5] in groupDoc(gid).members)
+        && (a.size() < 7 || a[6] in groupDoc(gid).members)
+        && (a.size() < 8 || a[7] in groupDoc(gid).members)
+        && (a.size() < 9 || a[8] in groupDoc(gid).members)
+        && (a.size() < 10 || a[9] in groupDoc(gid).members);
+    }
+
+    function emptyAssignees(task) {
+      return !('assigneeIds' in task)
+        || task.assigneeIds == null
+        || task.assigneeIds.size() == 0;
+    }
+
+    function taskIsPersonal(task) {
+      return !('groupId' in task)
+        || task.groupId == null;
+    }
+
+    function metadataOnlyGroupUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['name', 'icon', 'color']);
+    }
+
+    function addedOnlySelfToMembers(gid) {
+      let before = resource.data.members;
+      let after = request.resource.data.members;
+      return after is list
+        && before is list
+        && after.hasAll(before)
+        && after.size() == before.size() + 1
+        && request.auth.uid in after
+        && !(request.auth.uid in before)
+        && exists(invitePathForSelf(gid))
+        && get(invitePathForSelf(gid)).data.status == 'accepted';
+    }
+
+    function adminRemovedMembersOnly(gid) {
+      let before = resource.data.members;
+      let after = request.resource.data.members;
+      let admAfter = request.resource.data.get('admins', []);
+      return isGroupAdmin(gid)
+        && before is list
+        && after is list
+        && before.hasAll(after)
+        && after.size() < before.size()
+        && resource.data.ownerId in after
+        && admAfter is list
+        && after.hasAll(admAfter);
+    }
+
+    match /groups/{groupId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.members is list
+        && request.resource.data.members.size() == 1
+        && request.resource.data.members[0] == request.auth.uid
+        && request.resource.data.admins is list
+        && request.resource.data.admins.size() == 1
+        && request.resource.data.admins[0] == request.auth.uid;
+
+      allow update: if signedIn()
+        && resource.data.ownerId == request.resource.data.ownerId
+        && (
+          (isGroupAdmin(groupId) && metadataOnlyGroupUpdate())
+          || addedOnlySelfToMembers(groupId)
+          || adminRemovedMembersOnly(groupId)
+        );
+
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /groupInvites/{inviteId} {
+      allow read: if signedIn() && (
+        resource.data.inviteeUid == request.auth.uid
+        || isGroupAdmin(resource.data.groupId)
+      );
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'groupId', 'inviteeUid', 'invitedBy', 'status'
+        ])
+        && request.resource.data.groupId is string
+        && request.resource.data.inviteeUid is string
+        && request.resource.data.invitedBy == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && !isPersonalGroup(request.resource.data.groupId)
+        && isGroupAdmin(request.resource.data.groupId)
+        && inviteId == request.resource.data.groupId + '_' + request.resource.data.inviteeUid;
+
+      allow update: if signedIn() && (
+        (
+          resource.data.inviteeUid == request.auth.uid
+          && resource.data.status == 'pending'
+          && request.resource.data.groupId == resource.data.groupId
+          && request.resource.data.inviteeUid == resource.data.inviteeUid
+          && request.resource.data.invitedBy == resource.data.invitedBy
+          && request.resource.data.status in ['accepted', 'declined']
+        )
+        || (
+          isGroupAdmin(resource.data.groupId)
+          && request.resource.data.groupId == resource.data.groupId
+          && request.resource.data.inviteeUid == resource.data.inviteeUid
+          && request.resource.data.invitedBy == resource.data.invitedBy
+          && request.resource.data.status == 'revoked'
+        )
+      );
+
+      allow delete: if signedIn() && isGroupAdmin(resource.data.groupId);
+    }
+
+    match /tasks/{taskId} {
+      allow read: if signedIn() && (
+        (taskIsPersonal(resource.data)
+          && resource.data.ownerId == request.auth.uid)
+        || (resource.data.groupId != null && isGroupMember(resource.data.groupId))
+      );
+
+      allow create: if signedIn() && (
+        (
+          taskIsPersonal(request.resource.data)
+          && request.resource.data.ownerId == request.auth.uid
+          && emptyAssignees(request.resource.data)
+        )
+        || (
+          request.resource.data.groupId != null
+          && isGroupMember(request.resource.data.groupId)
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.createdBy == request.auth.uid
+          && assigneesOkForGroup(request.resource.data.groupId, request.resource.data)
+        )
+      );
+
+      allow update: if signedIn() && (
+        (
+          taskIsPersonal(resource.data)
+          && resource.data.ownerId == request.auth.uid
+          && taskIsPersonal(request.resource.data)
+          && request.resource.data.ownerId == request.auth.uid
+          && emptyAssignees(request.resource.data)
+        )
+        || (
+          request.resource.data.groupId != null
+          && resource.data.groupId == request.resource.data.groupId
+          && isGroupMember(request.resource.data.groupId)
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.createdBy == resource.data.createdBy
+          && assigneesOkForGroup(request.resource.data.groupId, request.resource.data)
+        )
+      );
+
+      allow delete: if signedIn() && (
+        (taskIsPersonal(resource.data) && resource.data.ownerId == request.auth.uid)
+        || (resource.data.groupId != null && isGroupMember(resource.data.groupId))
+      );
+    }
+
+    match /users/{userId}/fcmTokens/{tokenId} {
+      allow read, write: if signedIn() && request.auth.uid == userId;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

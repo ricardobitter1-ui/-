@@ -3,13 +3,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/location_service.dart';
 import '../../data/services/notification_service.dart';
+import '../../data/models/group_model.dart';
 import '../../data/models/task_model.dart';
 import '../theme/app_theme.dart';
 
 class TaskFormModal extends ConsumerStatefulWidget {
   final TaskModel? initialTask;
   final String? forcedGroupId;
-  const TaskFormModal({super.key, this.initialTask, this.forcedGroupId});
+  /// Quando preenchido com o grupo da tarefa, permite escolher responsáveis (membros).
+  final GroupModel? collaborationGroup;
+
+  const TaskFormModal({
+    super.key,
+    this.initialTask,
+    this.forcedGroupId,
+    this.collaborationGroup,
+  });
 
   @override
   ConsumerState<TaskFormModal> createState() => _TaskFormModalState();
@@ -27,8 +36,14 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   bool _attachLocation = false;
 
   bool _isLoading = false;
+  final Set<String> _selectedAssigneeIds = {};
 
   bool get _isEditing => widget.initialTask != null;
+
+  bool get _showAssignees =>
+      widget.collaborationGroup != null &&
+      widget.forcedGroupId != null &&
+      widget.forcedGroupId == widget.collaborationGroup!.id;
 
   @override
   void initState() {
@@ -36,6 +51,9 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     final task = widget.initialTask;
     _titleController = TextEditingController(text: task?.title ?? '');
     _descController = TextEditingController(text: task?.description ?? '');
+    if (task?.assigneeIds.isNotEmpty ?? false) {
+      _selectedAssigneeIds.addAll(task!.assigneeIds);
+    }
 
     if (task != null) {
       _reminderType = task.reminderType ?? 'none';
@@ -102,6 +120,10 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         locationTrigger: _reminderType == 'location' ? _locationTrigger : null,
         ownerId: widget.initialTask?.ownerId,
         groupId: widget.forcedGroupId ?? widget.initialTask?.groupId,
+        createdBy: widget.initialTask?.createdBy,
+        assigneeIds: _showAssignees
+            ? _selectedAssigneeIds.toList()
+            : (widget.initialTask?.assigneeIds ?? const []),
       );
 
       // Gerenciar Notificação Local
@@ -279,6 +301,42 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
               _buildSimpleLocationAttach(),
             ],
 
+            if (_showAssignees) ...[
+              const SizedBox(height: 20),
+              Text(
+                'Responsáveis',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Toque para atribuir membros do grupo.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.grey,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: widget.collaborationGroup!.members.map((mid) {
+                  final selected = _selectedAssigneeIds.contains(mid);
+                  return FilterChip(
+                    label: Text(_assigneeShortLabel(mid)),
+                    selected: selected,
+                    onSelected: (v) {
+                      setState(() {
+                        if (v) {
+                          _selectedAssigneeIds.add(mid);
+                        } else {
+                          _selectedAssigneeIds.remove(mid);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+
             const SizedBox(height: 24),
 
             SizedBox(
@@ -380,6 +438,11 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         ],
       ),
     );
+  }
+
+  String _assigneeShortLabel(String uid) {
+    if (uid.length <= 8) return uid;
+    return '…${uid.substring(uid.length - 6)}';
   }
 
   Widget _buildSimpleLocationAttach() {

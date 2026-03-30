@@ -85,6 +85,9 @@ class AuthService {
       await groupsRef.add({
         'name': 'Pessoal',
         'ownerId': user.uid,
+        'members': [user.uid],
+        'admins': [user.uid],
+        'isPersonal': true,
         'isDefault': true,
         'createdAt': FieldValue.serverTimestamp(),
       });

@@ -7,6 +7,9 @@ class GroupModel {
   final String color;
   final String ownerId;
   final List<String> members;
+  /// Administradores (subconjunto de [members]). Se vazio no Firestore, usa-se [ownerId].
+  final List<String> admins;
+  final bool isPersonal;
   final DateTime createdAt;
 
   const GroupModel({
@@ -16,25 +19,41 @@ class GroupModel {
     required this.color,
     required this.ownerId,
     required this.members,
+    this.admins = const [],
+    this.isPersonal = false,
     required this.createdAt,
   });
 
-  /// Deserializa um documento do Firestore para GroupModel.
-  /// Aplica defaults defensivos para campos ausentes.
+  /// Lista efetiva de admins (fallback legacy: só o dono).
+  List<String> get effectiveAdmins =>
+      admins.isNotEmpty ? admins : (ownerId.isNotEmpty ? [ownerId] : []);
+
+  bool isAdmin(String? uid) =>
+      uid != null && effectiveAdmins.contains(uid);
+
+  bool isMember(String? uid) => uid != null && members.contains(uid);
+
   factory GroupModel.fromMap(String id, Map<String, dynamic> data) {
+    final owner = data['ownerId'] as String? ?? '';
+    final memberList =
+        List<String>.from(data['members'] as List<dynamic>? ?? []);
+    final adminList =
+        List<String>.from(data['admins'] as List<dynamic>? ?? []);
+    final isDefault = data['isDefault'] as bool? ?? false;
+    final personal = data['isPersonal'] as bool? ?? isDefault;
     return GroupModel(
       id: id,
       name: data['name'] as String? ?? 'Sem nome',
       icon: data['icon'] as String? ?? 'group',
       color: data['color'] as String? ?? '#0052FF',
-      ownerId: data['ownerId'] as String? ?? '',
-      members: List<String>.from(data['members'] as List<dynamic>? ?? []),
+      ownerId: owner,
+      members: memberList,
+      admins: adminList,
+      isPersonal: personal,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 
-  /// Serializa o GroupModel para um Map pronto para escrita no Firestore.
-  /// Não inclui o campo `id` (é o ID do documento).
   Map<String, dynamic> toMap() {
     return {
       'name': name,
@@ -42,12 +61,12 @@ class GroupModel {
       'color': color,
       'ownerId': ownerId,
       'members': members,
+      'admins': effectiveAdmins,
+      'isPersonal': isPersonal,
       'createdAt': Timestamp.fromDate(createdAt),
     };
   }
 
-  /// Cria uma cópia do GroupModel com campos substituídos.
-  /// Imutabilidade segura para uso com Riverpod.
   GroupModel copyWith({
     String? id,
     String? name,
@@ -55,6 +74,8 @@ class GroupModel {
     String? color,
     String? ownerId,
     List<String>? members,
+    List<String>? admins,
+    bool? isPersonal,
     DateTime? createdAt,
   }) {
     return GroupModel(
@@ -64,6 +85,8 @@ class GroupModel {
       color: color ?? this.color,
       ownerId: ownerId ?? this.ownerId,
       members: members ?? this.members,
+      admins: admins ?? this.admins,
+      isPersonal: isPersonal ?? this.isPersonal,
       createdAt: createdAt ?? this.createdAt,
     );
   }

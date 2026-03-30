@@ -52,6 +52,8 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
       color: _color,
       ownerId: '',
       members: const [],
+      admins: const [],
+      isPersonal: false,
       createdAt: DateTime.now(),
     );
 

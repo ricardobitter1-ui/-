@@ -2,11 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../business_logic/providers/group_provider.dart';
+import '../../data/services/firebase_service.dart';
 import '../widgets/create_group_sheet.dart';
 import 'group_detail_screen.dart';
 
-class GroupsScreen extends ConsumerWidget {
+class GroupsScreen extends ConsumerStatefulWidget {
   const GroupsScreen({super.key});
+
+  @override
+  ConsumerState<GroupsScreen> createState() => _GroupsScreenState();
+}
+
+class _GroupsScreenState extends ConsumerState<GroupsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(firebaseServiceProvider).ensureCollaborationBackfill();
+    });
+  }
 
   Future<void> _openCreateGroupModal(BuildContext context) async {
     final created = await showModalBottomSheet<bool>(
@@ -27,7 +41,7 @@ class GroupsScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final groupsAsync = ref.watch(groupsStreamProvider);
 
     return Scaffold(
@@ -61,7 +75,7 @@ class GroupsScreen extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 leading: CircleAvatar(
-                  backgroundColor: _hexToColor(g.color).withOpacity(0.12),
+                  backgroundColor: _hexToColor(g.color).withValues(alpha: 0.12),
                   child: Icon(
                     Icons.groups_rounded,
                     color: _hexToColor(g.color),
@@ -77,7 +91,9 @@ class GroupsScreen extends ConsumerWidget {
                   if (g.id.trim().isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Grupo inválido. Atualize e tente novamente.'),
+                        content: Text(
+                          'Grupo inválido. Atualize e tente novamente.',
+                        ),
                       ),
                     );
                     return;
