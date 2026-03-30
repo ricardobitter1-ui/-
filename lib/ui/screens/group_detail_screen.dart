@@ -10,6 +10,9 @@ import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/color_utils.dart';
+import '../theme/group_icon.dart';
+import '../widgets/edit_group_sheet.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_form_modal.dart';
 
@@ -52,20 +55,28 @@ class GroupDetailScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _showInviteByUid(
+  Future<void> _showInviteByEmail(
     BuildContext context,
     WidgetRef ref,
     GroupModel g,
   ) async {
     final ctrl = TextEditingController();
+    void disposeCtrlNextFrame() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ctrl.dispose();
+      });
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Convidar por UID'),
+        title: const Text('Convidar por e-mail'),
         content: TextField(
           controller: ctrl,
+          keyboardType: TextInputType.emailAddress,
+          autocorrect: false,
           decoration: const InputDecoration(
-            hintText: 'Firebase Auth UID do utilizador',
+            hintText: 'email@exemplo.com',
           ),
         ),
         actions: [
@@ -81,24 +92,132 @@ class GroupDetailScreen extends ConsumerWidget {
       ),
     );
     if (ok != true) {
-      ctrl.dispose();
+      disposeCtrlNextFrame();
       return;
     }
     if (!context.mounted) {
-      ctrl.dispose();
+      disposeCtrlNextFrame();
       return;
     }
-    final uid = ctrl.text.trim();
-    ctrl.dispose();
-    if (uid.isEmpty) return;
+    final email = ctrl.text.trim();
+    disposeCtrlNextFrame();
+    if (email.isEmpty) return;
     try {
-      await ref.read(firebaseServiceProvider).createInvite(
+      await ref.read(firebaseServiceProvider).createInviteByEmail(
             groupId: g.id,
-            inviteeUid: uid,
+            email: email,
           );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Convite enviado.')),
+          const SnackBar(
+            content: Text(
+              'Convite criado. O convidado verá ao abrir a app com este e-mail.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _copyInviteLink(
+    BuildContext context,
+    WidgetRef ref,
+    GroupModel g,
+  ) async {
+    try {
+      final uri = await ref
+          .read(firebaseServiceProvider)
+          .getLatestPendingInviteShareUriForGroup(g.id);
+      if (!context.mounted) return;
+      if (uri == null || uri.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Crie um convite por e-mail primeiro para gerar o link.',
+            ),
+          ),
+        );
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: uri));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Link de convite copiado.')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  void _openEditGroupSheet(BuildContext context, GroupModel g) {
+    showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => EditGroupSheet(group: g),
+    ).then((saved) {
+      if (saved == true && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Grupo atualizado.')),
+        );
+      }
+    });
+  }
+
+  Future<void> _confirmDeleteGroup(
+    BuildContext context,
+    WidgetRef ref,
+    GroupModel g,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Apagar grupo?'),
+        content: const Text(
+          'O grupo será removido para todos os membros. '
+          'As tarefas associadas deixam de ser acessíveis neste contexto. '
+          'Esta ação não pode ser desfeita.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: const Text('Apagar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await ref.read(firebaseServiceProvider).deleteGroup(g.id);
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Grupo removido.')),
         );
       }
     } catch (e) {
@@ -122,22 +241,63 @@ class GroupDetailScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(g.name),
         actions: [
-          IconButton(
-            tooltip: 'Copiar ID do grupo',
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: g.id));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('ID do grupo copiado.')),
-              );
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (value) {
+              switch (value) {
+                case 'copyLink':
+                  _copyInviteLink(context, ref, g);
+                case 'invite':
+                  _showInviteByEmail(context, ref, g);
+                case 'edit':
+                  _openEditGroupSheet(context, g);
+                case 'delete':
+                  _confirmDeleteGroup(context, ref, g);
+              }
             },
-            icon: const Icon(Icons.link_rounded),
+            itemBuilder: (ctx) => [
+              if (!g.isPersonal && _isAdmin(ref, g))
+                const PopupMenuItem(
+                  value: 'copyLink',
+                  child: ListTile(
+                    leading: Icon(Icons.link_rounded),
+                    title: Text('Copiar link de convite'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              if (!g.isPersonal && _isAdmin(ref, g))
+                const PopupMenuItem(
+                  value: 'invite',
+                  child: ListTile(
+                    leading: Icon(Icons.person_add_rounded),
+                    title: Text('Convidar por e-mail'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              if (_isAdmin(ref, g))
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: ListTile(
+                    leading: Icon(Icons.edit_rounded),
+                    title: Text('Editar grupo'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              if (!g.isPersonal && _isAdmin(ref, g))
+                PopupMenuItem(
+                  value: 'delete',
+                  child: ListTile(
+                    leading: Icon(Icons.delete_outline_rounded,
+                        color: Colors.redAccent.shade200),
+                    title: Text(
+                      'Apagar grupo',
+                      style: TextStyle(color: Colors.redAccent.shade200),
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+            ],
           ),
-          if (!g.isPersonal && _isAdmin(ref, g))
-            IconButton(
-              tooltip: 'Convidar',
-              onPressed: () => _showInviteByUid(context, ref, g),
-              icon: const Icon(Icons.person_add_rounded),
-            ),
         ],
       ),
       body: Column(
@@ -146,18 +306,18 @@ class GroupDetailScreen extends ConsumerWidget {
             margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _hexToColor(g.color).withValues(alpha: 0.08),
+              color: parseAppHexColor(g.color).withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(18),
             ),
             child: Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: _hexToColor(
+                  backgroundColor: parseAppHexColor(
                     g.color,
                   ).withValues(alpha: 0.16),
                   child: Icon(
-                    Icons.groups_rounded,
-                    color: _hexToColor(g.color),
+                    groupIconFromKey(g.icon),
+                    color: parseAppHexColor(g.color),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -257,8 +417,8 @@ class GroupDetailScreen extends ConsumerWidget {
               if (!g.isPersonal && _isAdmin(ref, g))
                 ListTile(
                   leading: const Icon(Icons.person_add_alt_1_rounded),
-                  title: const Text('Convidar por UID'),
-                  onTap: () => _showInviteByUid(context, ref, g),
+                  title: const Text('Convidar por e-mail'),
+                  onTap: () => _showInviteByEmail(context, ref, g),
                 ),
             ],
           ),
@@ -366,22 +526,4 @@ class GroupDetailScreen extends ConsumerWidget {
       ),
     );
   }
-}
-
-Color _hexToColor(String hex) {
-  final raw = hex.trim();
-  final sanitized = raw.replaceAll(RegExp(r'[^0-9a-fA-F]'), '');
-  if (sanitized.isEmpty) return const Color(0xFF0052FF);
-
-  final normalized = sanitized.length > 8
-      ? sanitized.substring(sanitized.length - 8)
-      : sanitized;
-
-  final value = int.tryParse(normalized, radix: 16);
-  if (value == null) return const Color(0xFF0052FF);
-
-  if (normalized.length <= 6) {
-    return Color(0xFF000000 | value);
-  }
-  return Color(value & 0xFFFFFFFF);
 }

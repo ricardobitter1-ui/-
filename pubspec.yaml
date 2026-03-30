@@ -48,6 +48,7 @@ dependencies:
   fl_chart: ^0.70.2
   easy_date_timeline: ^2.0.9
   flutter_svg: ^2.0.10+1
+  app_links: ^6.4.0
 
 dev_dependencies:
   flutter_test:

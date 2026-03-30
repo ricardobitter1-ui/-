@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/task_model.dart';
 import '../models/group_model.dart';
@@ -18,6 +20,19 @@ class FirebaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   FirebaseService(this.uid);
+
+  /// Deep link `exmtodo://invite?token=…` (Spark).
+  static Uri inviteUriFromShareToken(String shareToken) => Uri(
+        scheme: 'exmtodo',
+        host: 'invite',
+        queryParameters: {'token': shareToken},
+      );
+
+  String _newShareToken() {
+    final r = Random.secure();
+    final bytes = List<int>.generate(16, (_) => r.nextInt(256));
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
 
   CollectionReference get _tasksCollection => _firestore.collection('tasks');
   CollectionReference get _groupsCollection => _firestore.collection('groups');
@@ -278,14 +293,18 @@ class FirebaseService {
       groupId,
       snap.data() as Map<String, dynamic>,
     );
-    if (g.ownerId != uid) {
-      throw Exception('Apenas o dono pode apagar o grupo');
+    if (g.isPersonal) {
+      throw Exception('Grupos pessoais não podem ser eliminados');
+    }
+    if (!g.isAdmin(uid)) {
+      throw Exception('Apenas administradores podem apagar o grupo');
     }
     await _groupsCollection.doc(groupId).delete();
   }
 
   // ─── Convites ───────────────────────────────────────────────────────────────
 
+  /// Convite por UID (legado / avançado). Inclui [shareToken] para link partilhável.
   Future<void> createInvite({
     required String groupId,
     required String inviteeUid,
@@ -311,7 +330,7 @@ class FirebaseService {
       throw Exception('Este utilizador já é membro');
     }
 
-    final inviteId = GroupInviteModel.documentId(groupId, invitee);
+    final inviteId = GroupInviteModel.documentIdForUid(groupId, invitee);
     final inviteRef = _groupInvitesCollection.doc(inviteId);
     final existing = await inviteRef.get();
     if (existing.exists) {
@@ -321,20 +340,162 @@ class FirebaseService {
       }
       await inviteRef.delete();
     }
+    final inviterName =
+        FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
     await inviteRef.set({
       'groupId': groupId,
       'inviteeUid': invitee,
       'invitedBy': uid,
       'status': 'pending',
+      'shareToken': _newShareToken(),
+      'groupName': group.name,
+      if (inviterName.isNotEmpty) 'inviterName': inviterName,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
 
-  /// Convites pendentes onde o utilizador atual é o convidado.
+  /// Convite por e-mail (Spark): doc `{groupId}_{emailLower}` + [shareToken] para link.
+  Future<void> createInviteByEmail({
+    required String groupId,
+    required String email,
+  }) async {
+    if (uid == null) throw Exception('Usuário não autenticado');
+    final emailLower = email.trim().toLowerCase();
+    if (emailLower.isEmpty || !emailLower.contains('@')) {
+      throw Exception('E-mail inválido');
+    }
+    final me = FirebaseAuth.instance.currentUser?.email?.trim().toLowerCase();
+    if (me != null && emailLower == me) {
+      throw Exception('Não pode convidar o seu próprio e-mail');
+    }
+
+    final groupSnap = await _groupsCollection.doc(groupId).get();
+    if (!groupSnap.exists) throw Exception('Grupo não encontrado');
+    final group = GroupModel.fromMap(
+      groupId,
+      groupSnap.data() as Map<String, dynamic>,
+    );
+    if (group.isPersonal) {
+      throw Exception('Grupo pessoal não pode ser partilhado');
+    }
+    if (!group.isAdmin(uid)) {
+      throw Exception('Apenas administradores podem convidar');
+    }
+
+    final inviteId = GroupInviteModel.documentIdForEmail(groupId, emailLower);
+    final inviteRef = _groupInvitesCollection.doc(inviteId);
+    final existing = await inviteRef.get();
+
+    if (existing.exists) {
+      final st = (existing.data() as Map<String, dynamic>)['status'] as String?;
+      if (st == 'pending') {
+        throw Exception('Já existe um convite pendente para este e-mail');
+      }
+      await inviteRef.delete();
+    }
+    final inviterName =
+        FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
+    final token = _newShareToken();
+    await inviteRef.set({
+      'groupId': groupId,
+      'inviteeUid': '',
+      'inviteeEmailLower': emailLower,
+      'invitedBy': uid,
+      'status': 'pending',
+      'shareToken': token,
+      'groupName': group.name,
+      if (inviterName.isNotEmpty) 'inviterName': inviterName,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// URI do convite mais recente pendente do grupo (admin). `null` se não houver.
+  Future<String?> getLatestPendingInviteShareUriForGroup(String groupId) async {
+    if (uid == null) return null;
+    final groupSnap = await _groupsCollection.doc(groupId).get();
+    if (!groupSnap.exists) return null;
+    final group = GroupModel.fromMap(
+      groupId,
+      groupSnap.data() as Map<String, dynamic>,
+    );
+    if (!group.isAdmin(uid)) return null;
+
+    final snap = await _groupInvitesCollection
+        .where('groupId', isEqualTo: groupId)
+        .where('status', isEqualTo: 'pending')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    final data = snap.docs.first.data() as Map<String, dynamic>;
+    final token = data['shareToken'] as String?;
+    if (token == null || token.isEmpty) return null;
+    return inviteUriFromShareToken(token).toString();
+  }
+
+  /// Resolve convite pendente pelo token do deep link (utilizador autenticado).
+  Future<GroupInviteModel?> getPendingInviteByShareToken(String shareToken) async {
+    if (uid == null) return null;
+    final t = shareToken.trim();
+    if (t.isEmpty) return null;
+    final snap = await _groupInvitesCollection
+        .where('shareToken', isEqualTo: t)
+        .where('status', isEqualTo: 'pending')
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    final d = snap.docs.first;
+    return GroupInviteModel.fromMap(d.id, d.data() as Map<String, dynamic>);
+  }
+
+  Stream<List<GroupInviteModel>> _mergeTwoInviteStreams(
+    Stream<List<GroupInviteModel>> a,
+    Stream<List<GroupInviteModel>> b,
+  ) {
+    return Stream<List<GroupInviteModel>>.multi((controller) {
+      var lastA = <GroupInviteModel>[];
+      var lastB = <GroupInviteModel>[];
+
+      void emit() {
+        final map = <String, GroupInviteModel>{};
+        for (final i in lastA) {
+          map[i.id] = i;
+        }
+        for (final i in lastB) {
+          map[i.id] = i;
+        }
+        final out = map.values.toList()
+          ..sort((x, y) => x.createdAt.compareTo(y.createdAt));
+        controller.add(out);
+      }
+
+      final subA = a.listen(
+        (list) {
+          lastA = list;
+          emit();
+        },
+        onError: controller.addError,
+      );
+      final subB = b.listen(
+        (list) {
+          lastB = list;
+          emit();
+        },
+        onError: controller.addError,
+      );
+
+      controller.onCancel = () async {
+        await subA.cancel();
+        await subB.cancel();
+      };
+    });
+  }
+
+  /// Convites pendentes: por UID ou por e-mail da sessão Auth.
   Stream<List<GroupInviteModel>> getPendingInvitesForMeStream() {
     if (uid == null) return Stream.value([]);
 
-    return _groupInvitesCollection
+    final uidStream = _groupInvitesCollection
         .where('inviteeUid', isEqualTo: uid)
         .where('status', isEqualTo: 'pending')
         .snapshots()
@@ -348,20 +509,44 @@ class FirebaseService {
               )
               .toList(),
         );
+
+    final email = FirebaseAuth.instance.currentUser?.email?.trim().toLowerCase();
+    if (email == null || email.isEmpty) {
+      return uidStream;
+    }
+
+    final emailStream = _groupInvitesCollection
+        .where('inviteeEmailLower', isEqualTo: email)
+        .where('status', isEqualTo: 'pending')
+        .snapshots()
+        .map(
+          (snap) => snap.docs
+              .map(
+                (d) => GroupInviteModel.fromMap(
+                  d.id,
+                  d.data() as Map<String, dynamic>,
+                ),
+              )
+              .toList(),
+        );
+
+    return _mergeTwoInviteStreams(uidStream, emailStream);
   }
 
-  /// Aceita em dois passos (exigido pelas security rules).
-  Future<void> acceptInvite(String groupId) async {
+  /// Aceita convite (ID completo do documento). Atualiza [inviteeUid] em convites por e-mail.
+  Future<void> acceptInviteByDocId(String inviteDocId) async {
     if (uid == null) throw Exception('Usuário não autenticado');
-    final inviteId = GroupInviteModel.documentId(groupId, uid!);
-    final inviteRef = _groupInvitesCollection.doc(inviteId);
+    final inviteRef = _groupInvitesCollection.doc(inviteDocId);
     final inviteSnap = await inviteRef.get();
     if (!inviteSnap.exists) throw Exception('Convite não encontrado');
-    final st = (inviteSnap.data() as Map<String, dynamic>)['status'] as String?;
+    final data = inviteSnap.data() as Map<String, dynamic>;
+    final st = data['status'] as String?;
     if (st != 'pending') throw Exception('Convite já foi tratado');
+    final groupId = data['groupId'] as String? ?? '';
 
     await inviteRef.update({
       'status': 'accepted',
+      'inviteeUid': uid,
       'respondedAt': FieldValue.serverTimestamp(),
     });
     await _groupsCollection.doc(groupId).update({
@@ -369,10 +554,9 @@ class FirebaseService {
     });
   }
 
-  Future<void> declineInvite(String groupId) async {
+  Future<void> declineInviteByDocId(String inviteDocId) async {
     if (uid == null) throw Exception('Usuário não autenticado');
-    final inviteId = GroupInviteModel.documentId(groupId, uid!);
-    final inviteRef = _groupInvitesCollection.doc(inviteId);
+    final inviteRef = _groupInvitesCollection.doc(inviteDocId);
     final inviteSnap = await inviteRef.get();
     if (!inviteSnap.exists) return;
     final st = (inviteSnap.data() as Map<String, dynamic>)['status'] as String?;
@@ -382,6 +566,17 @@ class FirebaseService {
       'status': 'declined',
       'respondedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// Compat: convite por UID com id `groupId_uid`.
+  Future<void> acceptInvite(String groupId) async {
+    if (uid == null) throw Exception('Usuário não autenticado');
+    await acceptInviteByDocId(GroupInviteModel.documentIdForUid(groupId, uid!));
+  }
+
+  Future<void> declineInvite(String groupId) async {
+    if (uid == null) throw Exception('Usuário não autenticado');
+    await declineInviteByDocId(GroupInviteModel.documentIdForUid(groupId, uid!));
   }
 
   /// Remove um membro (e o seu papel de admin, se houver). Apenas admins.

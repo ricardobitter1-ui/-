@@ -15,6 +15,8 @@ class ProfileScreen extends ConsumerWidget {
     final displayName = user?.displayName ?? user?.email ?? 'Usuário';
     final photoUrl = user?.photoURL;
     final invitesAsync = ref.watch(pendingInvitesStreamProvider);
+    final emailAddr = user?.email?.trim();
+    final hasEmail = emailAddr != null && emailAddr.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Perfil')),
@@ -41,9 +43,9 @@ class ProfileScreen extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    if (user?.email != null)
+                    if (emailAddr != null && emailAddr.isNotEmpty)
                       Text(
-                        user!.email!,
+                        emailAddr,
                         style: const TextStyle(color: Colors.grey),
                       ),
                   ],
@@ -52,6 +54,17 @@ class ProfileScreen extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 24),
+          if (!hasEmail)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                'Convites por e-mail requerem sessão com e-mail (Google ou e-mail/palavra-passe).',
+                style: TextStyle(
+                  color: Colors.amber.shade900,
+                  fontSize: 13,
+                ),
+              ),
+            ),
           invitesAsync.when(
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
@@ -76,10 +89,18 @@ class ProfileScreen extends ConsumerWidget {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Text(
-                              'Grupo: ${inv.groupId}',
+                              inv.displayGroupLabel,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Convidou: ${inv.displayInviterLabel}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade700,
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -91,7 +112,7 @@ class ProfileScreen extends ConsumerWidget {
                                     try {
                                       await ref
                                           .read(firebaseServiceProvider)
-                                          .declineInvite(inv.groupId);
+                                          .declineInviteByDocId(inv.id);
                                     } catch (e) {
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context)
@@ -112,7 +133,7 @@ class ProfileScreen extends ConsumerWidget {
                                     try {
                                       await ref
                                           .read(firebaseServiceProvider)
-                                          .acceptInvite(inv.groupId);
+                                          .acceptInviteByDocId(inv.id);
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(

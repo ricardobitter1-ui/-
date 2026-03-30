@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../business_logic/providers/group_provider.dart';
 import '../../data/services/firebase_service.dart';
+import '../theme/color_utils.dart';
+import '../theme/group_icon.dart';
 import '../widgets/create_group_sheet.dart';
 import 'group_detail_screen.dart';
 
@@ -75,10 +77,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 leading: CircleAvatar(
-                  backgroundColor: _hexToColor(g.color).withValues(alpha: 0.12),
+                  backgroundColor:
+                      parseAppHexColor(g.color).withValues(alpha: 0.12),
                   child: Icon(
-                    Icons.groups_rounded,
-                    color: _hexToColor(g.color),
+                    groupIconFromKey(g.icon),
+                    color: parseAppHexColor(g.color),
                   ),
                 ),
                 title: Text(
@@ -116,22 +119,4 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       ),
     );
   }
-}
-
-Color _hexToColor(String hex) {
-  final raw = hex.trim();
-  final sanitized = raw.replaceAll(RegExp(r'[^0-9a-fA-F]'), '');
-  if (sanitized.isEmpty) return const Color(0xFF0052FF);
-
-  final normalized = sanitized.length > 8
-      ? sanitized.substring(sanitized.length - 8)
-      : sanitized;
-
-  final value = int.tryParse(normalized, radix: 16);
-  if (value == null) return const Color(0xFF0052FF);
-
-  if (normalized.length <= 6) {
-    return Color(0xFF000000 | value);
-  }
-  return Color(value & 0xFFFFFFFF);
 }

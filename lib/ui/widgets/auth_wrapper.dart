@@ -5,6 +5,7 @@ import '../../data/services/fcm_service.dart';
 import '../../data/services/firebase_service.dart';
 import '../screens/main_shell.dart';
 import '../screens/login_screen.dart';
+import 'pending_invite_coordinator.dart';
 
 class AuthWrapper extends ConsumerStatefulWidget {
   const AuthWrapper({super.key});
@@ -37,7 +38,7 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
     return authState.when(
       data: (user) {
         if (user != null) {
-          return const MainShell();
+          return const PendingInviteCoordinator(child: MainShell());
         }
         return const LoginScreen();
       },

@@ -87,6 +87,7 @@ test('convite pendente: convidado não lê tarefa do grupo', async () => {
       inviteeUid: 'bob',
       invitedBy: 'owner1',
       status: 'pending',
+      shareToken: '0123456789abcdef0123456789abcdef',
       createdAt: new Date(),
     });
     await fs.doc('tasks/t1').set({
@@ -153,7 +154,38 @@ test('grupo pessoal: admin não cria convite', async () => {
       inviteeUid: 'other',
       invitedBy: 'owner1',
       status: 'pending',
+      shareToken: '0123456789abcdef0123456789abcdef',
       createdAt: new Date(),
     }),
   );
+});
+
+test('convite por e-mail: convidado com token email lê o convite', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const fs = ctx.firestore();
+    await fs.doc('groups/g1').set({
+      name: 'G',
+      icon: 'group',
+      color: '#000',
+      ownerId: 'owner1',
+      members: ['owner1'],
+      admins: ['owner1'],
+      isPersonal: false,
+      createdAt: new Date(),
+    });
+    await fs.doc('groupInvites/g1_alice@test.com').set({
+      groupId: 'g1',
+      inviteeUid: '',
+      inviteeEmailLower: 'alice@test.com',
+      invitedBy: 'owner1',
+      status: 'pending',
+      shareToken: 'fedcba9876543210fedcba9876543210',
+      createdAt: new Date(),
+    });
+  });
+
+  const db = testEnv.authenticatedContext('alice', {
+    email: 'alice@test.com',
+  }).firestore();
+  await assertSucceeds(db.doc('groupInvites/g1_alice@test.com').get());
 });

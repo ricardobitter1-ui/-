@@ -6,20 +6,19 @@ import '../../data/services/firebase_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
 
-/// Conteúdo do modal "Novo Grupo". O [TextEditingController] vive no [State]
-/// e é descartado com o sheet — evita `'_dependents.isEmpty'` ao dar dispose
-/// cedo demais fora do modal.
-class CreateGroupSheet extends ConsumerStatefulWidget {
-  const CreateGroupSheet({super.key});
+/// Sheet para editar nome, ícone e cor de um grupo existente (apenas metadados).
+class EditGroupSheet extends ConsumerStatefulWidget {
+  final GroupModel group;
+  const EditGroupSheet({super.key, required this.group});
 
   @override
-  ConsumerState<CreateGroupSheet> createState() => _CreateGroupSheetState();
+  ConsumerState<EditGroupSheet> createState() => _EditGroupSheetState();
 }
 
-class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
+class _EditGroupSheetState extends ConsumerState<EditGroupSheet> {
   late final TextEditingController _nameController;
-  String _icon = 'group';
-  String _color = '#0052FF';
+  late String _icon;
+  late String _color;
 
   static const _colorOptions = <String>[
     '#0052FF',
@@ -33,7 +32,10 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController();
+    final g = widget.group;
+    _nameController = TextEditingController(text: g.name);
+    _icon = g.icon.isNotEmpty ? g.icon : 'group';
+    _color = g.color.isNotEmpty ? g.color : '#0052FF';
   }
 
   @override
@@ -46,27 +48,21 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
 
-    final group = GroupModel(
-      id: '',
+    final updated = widget.group.copyWith(
       name: name,
       icon: _icon,
       color: _color,
-      ownerId: '',
-      members: const [],
-      admins: const [],
-      isPersonal: false,
-      createdAt: DateTime.now(),
     );
 
     try {
-      await ref.read(firebaseServiceProvider).addGroup(group);
+      await ref.read(firebaseServiceProvider).updateGroup(updated);
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erro ao criar grupo: $e'),
+          content: Text('Erro ao guardar: $e'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -90,7 +86,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Novo Grupo',
+                'Editar grupo',
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               IconButton(
@@ -103,7 +99,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
           TextField(
             controller: _nameController,
             decoration: const InputDecoration(
-              hintText: 'Nome do grupo (ex: Trabalho)',
+              hintText: 'Nome do grupo',
             ),
             textCapitalization: TextCapitalization.sentences,
           ),
@@ -160,7 +156,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
             height: 54,
             child: ElevatedButton(
               onPressed: _submit,
-              child: const Text('Criar Grupo'),
+              child: const Text('Guardar'),
             ),
           ),
         ],

@@ -5,6 +5,8 @@ class AppTheme {
 
   // Cores Premium - Azul Royal e Superfícies Suaves
   static const Color primaryBlue = Color(0xFF0052FF);
+  /// Success Cyan — indicadores de conclusão (style guide).
+  static const Color successCyan = Color(0xFF00F5D4);
   static const Color backgroundLight = Color(0xFFF8F9FF);
   static const Color cardSurface = Colors.white;
   static const Color darkSurface = Color(0xFF121212);

@@ -16,13 +16,19 @@ service cloud.firestore {
         && request.auth.uid in groupDoc(gid).members;
     }
 
+    // Alinhado com GroupModel.effectiveAdmins: lista vazia ou ausente => só o dono é admin.
     function isGroupAdmin(gid) {
       return signedIn()
         && exists(/databases/$(database)/documents/groups/$(gid))
         && (
           (groupDoc(gid).keys().hasAll(['admins'])
             && groupDoc(gid).admins is list
+            && groupDoc(gid).admins.size() > 0
             && request.auth.uid in groupDoc(gid).admins)
+          || (groupDoc(gid).keys().hasAll(['admins'])
+            && groupDoc(gid).admins is list
+            && groupDoc(gid).admins.size() == 0
+            && request.auth.uid == groupDoc(gid).ownerId)
           || (!groupDoc(gid).keys().hasAll(['admins'])
             && request.auth.uid == groupDoc(gid).ownerId)
         );
@@ -33,8 +39,22 @@ service cloud.firestore {
         && groupDoc(gid).get('isPersonal', false) == true;
     }
 
-    function invitePathForSelf(gid) {
+    function invitePathForSelfUid(gid) {
       return /databases/$(database)/documents/groupInvites/$(gid + '_' + request.auth.uid);
+    }
+
+    function invitePathForSelfEmail(gid) {
+      return /databases/$(database)/documents/groupInvites/$(gid + '_' + request.auth.token.email);
+    }
+
+    function inviteAcceptedForGroupJoin(gid) {
+      let okUid = exists(invitePathForSelfUid(gid))
+        && get(invitePathForSelfUid(gid)).data.status == 'accepted';
+      let okEmail = request.auth != null
+        && request.auth.token.email is string
+        && exists(invitePathForSelfEmail(gid))
+        && get(invitePathForSelfEmail(gid)).data.status == 'accepted';
+      return okUid || okEmail;
     }
 
     function assigneesOkForGroup(gid, task) {
@@ -85,8 +105,7 @@ service cloud.firestore {
         && after.size() == before.size() + 1
         && request.auth.uid in after
         && !(request.auth.uid in before)
-        && exists(invitePathForSelf(gid))
-        && get(invitePathForSelf(gid)).data.status == 'accepted';
+        && inviteAcceptedForGroupJoin(gid);
     }
 
     function adminRemovedMembersOnly(gid) {
@@ -123,26 +142,55 @@ service cloud.firestore {
           || adminRemovedMembersOnly(groupId)
         );
 
-      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow delete: if signedIn()
+        && resource.data.get('isPersonal', false) != true
+        && isGroupAdmin(groupId);
     }
 
     match /groupInvites/{inviteId} {
+      // get() on a missing doc still evaluates read rules; resource is null then, so allow
+      // signed-in reads only when absent, otherwise enforce invitee/admin checks on resource.data.
       allow read: if signedIn() && (
-        resource.data.inviteeUid == request.auth.uid
+        resource == null
+        || resource.data.inviteeUid == request.auth.uid
+        || (
+          resource.data.get('inviteeEmailLower', '') != ''
+          && request.auth.token.email == resource.data.inviteeEmailLower
+        )
         || isGroupAdmin(resource.data.groupId)
       );
 
       allow create: if signedIn()
-        && request.resource.data.keys().hasAll([
-          'groupId', 'inviteeUid', 'invitedBy', 'status'
-        ])
-        && request.resource.data.groupId is string
-        && request.resource.data.inviteeUid is string
         && request.resource.data.invitedBy == request.auth.uid
         && request.resource.data.status == 'pending'
+        && request.resource.data.groupId is string
         && !isPersonalGroup(request.resource.data.groupId)
         && isGroupAdmin(request.resource.data.groupId)
-        && inviteId == request.resource.data.groupId + '_' + request.resource.data.inviteeUid;
+        && (
+          (
+            request.resource.data.keys().hasAll([
+              'groupId', 'inviteeUid', 'invitedBy', 'status', 'shareToken', 'createdAt'
+            ])
+            && request.resource.data.inviteeUid is string
+            && request.resource.data.inviteeUid.size() > 8
+            && inviteId == request.resource.data.groupId + '_' + request.resource.data.inviteeUid
+            && request.resource.data.get('inviteeEmailLower', '') == ''
+            && request.resource.data.get('shareToken', '') is string
+            && request.resource.data.shareToken.size() >= 16
+          )
+          || (
+            request.resource.data.keys().hasAll([
+              'groupId', 'inviteeUid', 'inviteeEmailLower', 'invitedBy',
+              'status', 'shareToken', 'createdAt'
+            ])
+            && request.resource.data.inviteeUid == ''
+            && request.resource.data.inviteeEmailLower is string
+            && request.resource.data.inviteeEmailLower.matches('.*@.*')
+            && inviteId == request.resource.data.groupId + '_' + request.resource.data.inviteeEmailLower
+            && request.resource.data.shareToken is string
+            && request.resource.data.shareToken.size() >= 16
+          )
+        );
 
       allow update: if signedIn() && (
         (
@@ -151,13 +199,42 @@ service cloud.firestore {
           && request.resource.data.groupId == resource.data.groupId
           && request.resource.data.inviteeUid == resource.data.inviteeUid
           && request.resource.data.invitedBy == resource.data.invitedBy
+          && request.resource.data.get('inviteeEmailLower', '')
+            == resource.data.get('inviteeEmailLower', '')
+          && request.resource.data.get('shareToken', '')
+            == resource.data.get('shareToken', '')
           && request.resource.data.status in ['accepted', 'declined']
+        )
+        || (
+          resource.data.status == 'pending'
+          && resource.data.get('inviteeEmailLower', '') != ''
+          && request.auth.token.email == resource.data.inviteeEmailLower
+          && request.resource.data.groupId == resource.data.groupId
+          && request.resource.data.invitedBy == resource.data.invitedBy
+          && request.resource.data.inviteeEmailLower == resource.data.inviteeEmailLower
+          && request.resource.data.get('shareToken', '')
+            == resource.data.get('shareToken', '')
+          && request.resource.data.status in ['accepted', 'declined']
+          && (
+            (
+              request.resource.data.status == 'accepted'
+              && request.resource.data.inviteeUid == request.auth.uid
+            )
+            || (
+              request.resource.data.status == 'declined'
+              && request.resource.data.inviteeUid == resource.data.get('inviteeUid', '')
+            )
+          )
         )
         || (
           isGroupAdmin(resource.data.groupId)
           && request.resource.data.groupId == resource.data.groupId
           && request.resource.data.inviteeUid == resource.data.inviteeUid
           && request.resource.data.invitedBy == resource.data.invitedBy
+          && request.resource.data.get('inviteeEmailLower', '')
+            == resource.data.get('inviteeEmailLower', '')
+          && request.resource.data.get('shareToken', '')
+            == resource.data.get('shareToken', '')
           && request.resource.data.status == 'revoked'
         )
       );

@@ -60,6 +60,25 @@ A "assinatura" visual do app é baseada em curvas suaves e profundidade.
 
 ---
 
+## 5. Group Rail Cards (aba **Hoje**)
+
+Carrossel horizontal de mini-cards por grupo — alinhado ao fundo claro do app; **não** usar `#121212` como fundo único destes cards.
+
+| Elemento | Regra |
+|----------|--------|
+| **Cor base** | Hex do grupo (`GroupModel.color`). Parsing centralizado com fallback **Primary Blue** se inválido. |
+| **Contraste** | Se a luminância relativa (WCAG sRGB) for alta (cor clara), fazer **lerp** em direção a `#2B2D42` até \(L \leq 0{,}40\), garantindo **texto branco** legível. |
+| **Gradiente** | `LinearGradient` `topLeft` → `bottomRight`: topo com ~14% de mix com branco; base = cor normalizada. |
+| **Ícone** | Círculo 40px, fundo branco **α 18%**, ícone branco **α 95%**. Mapear `group` / `work` / `home` / `fitness_center` / `school` → ícones Material `*_rounded`; fallback `groups_rounded`. |
+| **Tipografia** | Nome: branco, **w800**, ~15px, até 2 linhas. Linha de estatísticas: branco **α 72%**, 12px, **w600**. |
+| **Progresso** | Track: branco **α 22%**. Preenchimento: **Success Cyan** `#00F5D4` (regra única no rail). |
+| **Sombra** | Preta **α 7%**, blur ~18px, offset Y 6px. |
+| **Raio** | `20px` no card (alinhado ao rail atual). |
+
+Implementação de referência: `lib/ui/widgets/group_rail_card.dart`, `lib/ui/theme/color_utils.dart`, `lib/ui/theme/group_icon.dart`.
+
+---
+
 ## 📊 Aplicação Sugerida (Layout)
 
 ```text
@@ -69,8 +88,8 @@ A "assinatura" visual do app é baseada em curvas suaves e profundidade.
 │ HELLO, OLIVIA            │  <-- Inter ExtraBold
 │ [===== 80% =====]        │  <-- Gradiente Blue -> Indigo
 │                          │
-│ [ BLACK CARD - FOCUS ]   │  <-- #121212 com texto branco
+│ [Colored Group][ Group ] │  <-- Cor do grupo + ícone; texto branco (secção 5)
 │                          │
-│ [ Group Card ] [ Group ] │  <-- White Cards com Soft Shadows
+│ [ Task list / Inbox... ] │
 └──────────────────────────┘
 ```

@@ -11,6 +11,7 @@ import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/daily_progress_indicator.dart';
+import '../widgets/group_rail_card.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_form_modal.dart';
 import 'group_detail_screen.dart';
@@ -329,7 +330,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     return SizedBox(
-      height: 152,
+      height: 168,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -339,74 +340,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final g = groups[index];
           final stats =
               progressByGroup[g.id] ?? const GroupDayProgress(total: 0, completed: 0);
-          final accent = _hexToColor(g.color);
 
-          return Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => GroupDetailScreen(group: g),
-                  ),
-                );
-              },
-              child: Ink(
-                width: 200,
-                decoration: BoxDecoration(
-                  color: AppTheme.darkSurface,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border(
-                    left: BorderSide(color: accent, width: 4),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
+          return GroupRailCard(
+            group: g,
+            stats: stats,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => GroupDetailScreen(group: g),
                 ),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      g.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      stats.total == 0
-                          ? 'Nada neste dia'
-                          : '${stats.completed}/${stats.total} concluídas',
-                      style: TextStyle(
-                        color: Colors.grey.shade400,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: LinearProgressIndicator(
-                        value: stats.total == 0 ? 0 : stats.ratio,
-                        minHeight: 6,
-                        backgroundColor: Colors.white.withValues(alpha: 0.12),
-                        color: accent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+              );
+            },
           );
         },
       ),
@@ -559,22 +503,4 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ],
     );
   }
-}
-
-Color _hexToColor(String hex) {
-  final raw = hex.trim();
-  final sanitized = raw.replaceAll(RegExp(r'[^0-9a-fA-F]'), '');
-  if (sanitized.isEmpty) return AppTheme.primaryBlue;
-
-  final normalized = sanitized.length > 8
-      ? sanitized.substring(sanitized.length - 8)
-      : sanitized;
-
-  final value = int.tryParse(normalized, radix: 16);
-  if (value == null) return AppTheme.primaryBlue;
-
-  if (normalized.length <= 6) {
-    return Color(0xFF000000 | value);
-  }
-  return Color(value & 0xFFFFFFFF);
 }

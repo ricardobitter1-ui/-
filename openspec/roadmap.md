@@ -24,22 +24,47 @@ Como Product Manager Sênior, este roadmap foca na criação de uma plataforma d
 
 - **[x] Navegação por Abas (Bottom Nav):** Grupos, perfil e aba principal **Hoje** (antes “Calendário”).
 - **[x] Dashboard de Entrada:** Seção **Sem data** (atemporais) na aba Hoje + faixa horizontal de **progresso por grupo** no dia selecionado (toque → detalhe do grupo).
-- **[ ] Calendário Premium:** Refinar o `Horizontal Date Picker` e a timeline/lista diária (polimento visual e UX).
-- **[ ] CRUD de Grupos Elite:** Gestão de cores e ícones no Firestore.
+- **[x] CRUD visual completo de Grupos Elite:** Criar, **editar** nome/cor/ícone (sheet no detalhe) e **apagar** (admin/dono, não pessoal). Change: `openspec/changes/group-crud-complete/`.
 
 ---
 
-## 🤝 Fase 3: Detalhes & Colaboração (PLANEJADO)
-*Foco: Gestão profunda de grupos e UI avançada.*
+## 🤝 Fase 3: Colaboração em Grupos & Segurança (BASE ENTREGUE)
+*Change de referência: `openspec/changes/group-sharing-collaboration/` (proposal, design, specs, tasks).*
 
-- **[ ] Tela de Detalhe do Grupo:** Visualização completa de tarefas por grupo.
-- **[ ] Sub-tarefas (Checklist):** Implementar suporte a sub-itens dentro de uma tarefa.
-- **[ ] Glassmorphism UI:** Efeitos visuais premium nas transições e cards.
-- **[ ] Gestão de Membros (Invite Flow):** Convite básico para grupos.
+*Meta: Membros, convites com aceite obrigatório, responsáveis em tarefas de grupo, regras no Firestore e base para push.*
+
+### Entregue na implementação atual
+
+- **[x] Modelo de dados:** `admins`, `isPersonal`, `members`; convites em `groupInvites`; tarefas com `assigneeIds` e `createdBy`.
+- **[x] Firestore Security Rules:** Grupos, convites, tarefas (incl. validação de assignees), tokens FCM em `users/{uid}/fcmTokens/*`; deploy documentado (`firebase/README.md`).
+- **[x] Queries de tarefas:** Leitura combinada sem `OR` no Firestore (merge de streams) para compatibilidade com as rules; stream direto por `groupId` no detalhe do grupo.
+- **[x] Backfill:** Grupos legados (ex. "Pessoal" sem `members`) e marcação de grupo pessoal ao login.
+- **[x] Convites (MVP):** Criação por **UID** (temporário), aceite em dois passos, recusa; inbox na aba **Perfil**.
+- **[x] Partilha (MVP):** Copiar **ID** do grupo (placeholder até haver link URL).
+- **[x] Admin de equipa:** Remover membros (exceto dono); convidar (MVP por UID); lista de membros no detalhe.
+- **[x] Responsáveis na tarefa:** Seleção entre membros do grupo no formulário; persistência em `assigneeIds`.
+- **[x] FCM (cliente):** Registo de token ao entrar; refresh associado à conta.
+- **[x] Exclusão de grupo:** **Dono ou admin** pode apagar grupos **não pessoais** (rules + UI; `group-crud-complete`).
+
+### Pendências da mesma change (técnico / backlog da proposta)
+
+- **[ ] Cloud Functions:** Callables opcionais, rate limit, trigger de push em `tasks` (ver `tasks.md` §3 e `functions/README.md`).
+- **[ ] App Check** (opcional).
+- **[ ] Lembretes no servidor** para assignees (Scheduler / batch), além do lembrete local no dispositivo do criador.
+
+### Fase 4 — Continuação (produto prioritário)
+
+*Change Spark: `openspec/changes/group-invite-link-email/` (Firestore + cliente; sem Functions).*
+
+- **[x] Link partilhável (URL):** Link com token `exmtodo://invite?…`, `app_links`, modal Aceitar/Recusar (`group-invite-link-email`). App Links HTTPS ficam como melhoria futura.
+- **[x] Convite por e-mail (Spark):** UI por e-mail, `inviteeEmailLower`, modal ao abrir/retomar + inbox no perfil. **Pendente só com Blaze + Functions:** push/e-mail no servidor ao criar convite.
+- **[x] CRUD de grupos (papéis):** Entregue com `group-crud-complete` (editar metadados; apagar para admin/dono; grupo pessoal protegido).
 
 ---
 
-## 📈 Fase 4: Analytics & Automação (FUTURO)
+
+
+## 📈 Fase 5: Analytics & Automação (FUTURO)
 - **[ ] Geofencing de Grupo:** Alertas por localização.
 
 
