@@ -8,26 +8,26 @@
 
 ## 2. Service Layer — CRUD de Grupos
 
-- [ ] 2.1 Adicionar `CollectionReference get _groupsCollection` em `FirebaseService`
-- [ ] 2.2 Implementar `Stream<List<GroupModel>> getGroupsStream()` usando `where('members', arrayContains: uid)`
-- [ ] 2.3 Implementar `Future<void> addGroup(GroupModel group)` com injeção automática de `ownerId = uid` e `members = [uid]`, verificando autenticação
-- [ ] 2.4 Implementar `Future<void> updateGroup(GroupModel group)` com validação `group.ownerId == uid` antes do update
-- [ ] 2.5 Implementar `Future<void> deleteGroup(String groupId)` verificando autenticação
+- [x] 2.1 Adicionar `CollectionReference get _groupsCollection` em `FirebaseService`
+- [x] 2.2 Implementar `Stream<List<GroupModel>> getGroupsStream()` usando `where('members', arrayContains: uid)`
+- [x] 2.3 Implementar `Future<void> addGroup(GroupModel group)` com injeção automática de `ownerId = uid` e `members = [uid]`, verificando autenticação
+- [x] 2.4 Implementar `Future<void> updateGroup(GroupModel group)` com validação `group.ownerId == uid` antes do update
+- [x] 2.5 Implementar `Future<void> deleteGroup(String groupId)` verificando autenticação
 
 ## 3. Service Layer — Streams Especializados de Tarefas
 
-- [ ] 3.1 Implementar `Stream<List<TaskModel>> getAtemporalTasksStream()` com query `where('ownerId', isEqualTo: uid).where('dueDate', isNull: true)`
-- [ ] 3.2 Implementar `Stream<List<TaskModel>> getScheduledTasksStream(DateTime date)` com range `[startOfDay, startOfNextDay)` usando `isGreaterThanOrEqualTo` / `isLessThan` no `dueDate`
-- [ ] 3.3 Implementar `Stream<List<TaskModel>> getTasksByGroupStream(String groupId)` com query `where('groupId', isEqualTo: groupId)`
-- [ ] 3.4 Garantir que os 3 novos streams retornam `Stream.value([])` quando `uid == null`
+- [x] 3.1 Implementar `Stream<List<TaskModel>> getAtemporalTasksStream()` com query `where('ownerId', isEqualTo: uid).where('dueDate', isNull: true)`
+- [x] 3.2 Implementar `Stream<List<TaskModel>> getScheduledTasksStream(DateTime date)` com range `[startOfDay, startOfNextDay)` usando `isGreaterThanOrEqualTo` / `isLessThan` no `dueDate`
+- [x] 3.3 Implementar `Stream<List<TaskModel>> getTasksByGroupStream(String groupId)` com query `where('groupId', isEqualTo: groupId)`
+- [x] 3.4 Garantir que os 3 novos streams retornam `Stream.value([])` quando `uid == null`
 
 ## 4. Business Logic Layer — Providers Riverpod
 
-- [ ] 4.1 Criar `lib/business_logic/providers/group_provider.dart` com `groupsStreamProvider` como `StreamProvider<List<GroupModel>>`
-- [ ] 4.2 Adicionar `atemporalTasksStreamProvider` em `task_provider.dart` como `StreamProvider<List<TaskModel>>`
-- [ ] 4.3 Adicionar `scheduledTasksStreamProvider` em `task_provider.dart` como `StreamProvider.family<List<TaskModel>, DateTime>`
-- [ ] 4.4 Adicionar `groupTasksStreamProvider` em `task_provider.dart` como `StreamProvider.family<List<TaskModel>, String>`
-- [ ] 4.5 Confirmar que `tasksStreamProvider` existente não foi alterado (zero regressão)
+- [x] 4.1 Criar `lib/business_logic/providers/group_provider.dart` com `groupsStreamProvider` como `StreamProvider<List<GroupModel>>`
+- [x] 4.2 Adicionar `atemporalTasksStreamProvider` em `task_provider.dart` como `StreamProvider<List<TaskModel>>`
+- [x] 4.3 Adicionar `scheduledTasksStreamProvider` em `task_provider.dart` como `StreamProvider.family<List<TaskModel>, DateTime>`
+- [x] 4.4 Adicionar `groupTasksStreamProvider` em `task_provider.dart` como `StreamProvider.family<List<TaskModel>, String>`
+- [x] 4.5 Confirmar que `tasksStreamProvider` existente não foi alterado (zero regressão)
 
 ## 5. Infraestrutura — Firestore Indexes
 

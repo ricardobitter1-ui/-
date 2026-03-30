@@ -18,7 +18,10 @@ class AuthService {
 
   Future<UserCredential?> signInWithEmail(String email, String password) async {
     try {
-      final credential = await _auth.signInWithEmailAndPassword(email: email, password: password);
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
       if (credential.user != null) {
         await _ensureDefaultGroup(credential.user!);
       }
@@ -30,7 +33,10 @@ class AuthService {
 
   Future<UserCredential?> signUpWithEmail(String email, String password) async {
     try {
-      final credential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
       if (credential.user != null) {
         await _ensureDefaultGroup(credential.user!);
       }
@@ -43,13 +49,12 @@ class AuthService {
   Future<UserCredential?> signInWithGoogle() async {
     try {
       // Usar authenticate() em vez de signIn() para v7.2.0+
-      final GoogleSignInAccount? googleUser = await _googleSignIn.authenticate();
-      if (googleUser == null) return null;
+      final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
       final AuthCredential credential = GoogleAuthProvider.credential(
         idToken: googleAuth.idToken,
-        // accessToken não é mais garantido no GoogleSignInAuthentication v7+ 
+        // accessToken não é mais garantido no GoogleSignInAuthentication v7+
         // sem autorização explícita de escopos, mas o idToken basta para o Firebase.
       );
 

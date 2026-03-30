@@ -12,10 +12,13 @@ final tasksStreamProvider = StreamProvider<List<TaskModel>>((ref) {
 
 // ─── Providers especializados — Fase 2 ────────────────────────────────────────
 
-/// Tarefas SEM data — alimenta o Dashboard Inbox (atemporais / backlog).
-final atemporalTasksStreamProvider = StreamProvider<List<TaskModel>>((ref) {
-  final firebaseService = ref.watch(firebaseServiceProvider);
-  return firebaseService.getAtemporalTasksStream();
+/// Tarefas SEM data — derivadas de [tasksStreamProvider] (filtro `dueDate == null`).
+/// Evita query Firestore com `where` + `isNull` + `orderBy`, que exige índice composto.
+final atemporalTasksStreamProvider =
+    Provider<AsyncValue<List<TaskModel>>>((ref) {
+  return ref.watch(tasksStreamProvider).whenData(
+        (tasks) => tasks.where((t) => t.dueDate == null).toList(),
+      );
 });
 
 /// Tarefas agendadas para uma data específica — alimenta a aba Calendário.
@@ -28,10 +31,18 @@ final scheduledTasksStreamProvider =
 });
 
 /// Tarefas de um grupo específico (com ou sem data).
-/// Uso: ref.watch(groupTasksStreamProvider('groupId'))
+/// Deriva de [tasksStreamProvider] (query só por `ownerId`, igual à Home) e filtra
+/// por `groupId` no cliente. Evita query composta Firestore + índice e reduz risco
+/// de ANR/travamento ao abrir o detalhe do grupo.
+/// Uso: `ref.watch(groupTasksStreamProvider(groupId))` → [AsyncValue].
 final groupTasksStreamProvider =
-    StreamProvider.family<List<TaskModel>, String>((ref, groupId) {
-  final firebaseService = ref.watch(firebaseServiceProvider);
-  return firebaseService.getTasksByGroupStream(groupId);
+    Provider.family<AsyncValue<List<TaskModel>>, String>((ref, groupId) {
+  final gid = groupId.trim();
+  if (gid.isEmpty) {
+    return const AsyncValue.data([]);
+  }
+  return ref.watch(tasksStreamProvider).whenData(
+        (tasks) => tasks.where((t) => t.groupId == gid).toList(),
+      );
 });
 

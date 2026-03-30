@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/services/auth_service.dart';
-import '../screens/home_screen.dart';
+import '../screens/main_shell.dart';
 import '../screens/login_screen.dart';
 
 class AuthWrapper extends ConsumerWidget {
@@ -14,7 +14,7 @@ class AuthWrapper extends ConsumerWidget {
     return authState.when(
       data: (user) {
         if (user != null) {
-          return const HomeScreen();
+          return const MainShell();
         }
         return const LoginScreen();
       },

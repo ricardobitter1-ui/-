@@ -22,9 +22,9 @@ Como Product Manager Sênior, este roadmap foca na criação de uma plataforma d
 ## 🚀 Fase 2: Estrutura Base & Grupos de Elite (EM PROGRESSO)
 *Foco: Consolidar a navegação e visualização por contextos.*
 
-- **[ ] Navegação por Abas (Bottom Nav):** Implementar Dashboard e Calendário.
-- **[ ] Dashboard de Entrada:** Criar seção de "Atemporais" (Tarefas sem data) e Lista de Grupos.
-- **[ ] Calendário Premium:** Refinar o `Horizontal Date Picker` e a timeline diária.
+- **[x] Navegação por Abas (Bottom Nav):** Grupos, perfil e aba principal **Hoje** (antes “Calendário”).
+- **[x] Dashboard de Entrada:** Seção **Sem data** (atemporais) na aba Hoje + faixa horizontal de **progresso por grupo** no dia selecionado (toque → detalhe do grupo).
+- **[ ] Calendário Premium:** Refinar o `Horizontal Date Picker` e a timeline/lista diária (polimento visual e UX).
 - **[ ] CRUD de Grupos Elite:** Gestão de cores e ícones no Firestore.
 
 ---
@@ -40,7 +40,6 @@ Como Product Manager Sênior, este roadmap foca na criação de uma plataforma d
 ---
 
 ## 📈 Fase 4: Analytics & Automação (FUTURO)
-- **[ ] Dashboard de Performance:** Estatísticas de produtividade (Statistics Screen).
 - **[ ] Geofencing de Grupo:** Alertas por localização.
 
 

@@ -8,7 +8,8 @@ import '../theme/app_theme.dart';
 
 class TaskFormModal extends ConsumerStatefulWidget {
   final TaskModel? initialTask;
-  const TaskFormModal({super.key, this.initialTask});
+  final String? forcedGroupId;
+  const TaskFormModal({super.key, this.initialTask, this.forcedGroupId});
 
   @override
   ConsumerState<TaskFormModal> createState() => _TaskFormModalState();
@@ -23,7 +24,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   TimeOfDay? _selectedTime;
 
   String _locationTrigger = 'arrival';
-  bool _attachLocation = false; 
+  bool _attachLocation = false;
 
   bool _isLoading = false;
 
@@ -35,7 +36,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     final task = widget.initialTask;
     _titleController = TextEditingController(text: task?.title ?? '');
     _descController = TextEditingController(text: task?.description ?? '');
-    
+
     if (task != null) {
       _reminderType = task.reminderType ?? 'none';
       if (task.dueDate != null) {
@@ -61,10 +62,15 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
 
     try {
       DateTime? finalDueDate;
-      if (_reminderType == 'datetime' && _selectedDate != null && _selectedTime != null) {
+      if (_reminderType == 'datetime' &&
+          _selectedDate != null &&
+          _selectedTime != null) {
         finalDueDate = DateTime(
-          _selectedDate!.year, _selectedDate!.month, _selectedDate!.day,
-          _selectedTime!.hour, _selectedTime!.minute,
+          _selectedDate!.year,
+          _selectedDate!.month,
+          _selectedDate!.day,
+          _selectedTime!.hour,
+          _selectedTime!.minute,
         );
       }
 
@@ -72,7 +78,9 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       double? lng = widget.initialTask?.longitude;
 
       if (_reminderType == 'location' || (_attachLocation && lat == null)) {
-        final position = await ref.read(locationServiceProvider).getCurrentLocation();
+        final position = await ref
+            .read(locationServiceProvider)
+            .getCurrentLocation();
         if (position != null) {
           lat = position.latitude;
           lng = position.longitude;
@@ -93,22 +101,27 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         dueDate: finalDueDate,
         locationTrigger: _reminderType == 'location' ? _locationTrigger : null,
         ownerId: widget.initialTask?.ownerId,
-        groupId: widget.initialTask?.groupId,
+        groupId: widget.forcedGroupId ?? widget.initialTask?.groupId,
       );
 
       // Gerenciar Notificação Local
       final ns = ref.read(notificationServiceProvider);
-      
+
       // Se estamos editando, cancelamos a notificação antiga se ela existia
       // (Para simplificar, usamos o hash do ID como notifId se for edição,
       // ou o milisegundo atual se for novo. Idealmente o TaskModel teria um campo notifId).
       // Vamos usar task.id.hashCode como ID estável para notificações de uma tarefa específica.
-      final notifId = task.id.isNotEmpty ? task.id.hashCode : DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final notifId = task.id.isNotEmpty
+          ? task.id.hashCode
+          : DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
       if (_reminderType == 'datetime' && finalDueDate != null) {
         if (finalDueDate.isBefore(DateTime.now())) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Aviso: O horário agendado precisa ser no futuro!'), backgroundColor: Colors.redAccent),
+            const SnackBar(
+              content: Text('Aviso: O horário agendado precisa ser no futuro!'),
+              backgroundColor: Colors.redAccent,
+            ),
           );
           setState(() => _isLoading = false);
           return;
@@ -118,7 +131,9 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
           await ns.scheduleTaskReminder(
             notifId,
             task.title,
-            task.description.isEmpty ? "Hora de completar sua tarefa!" : task.description,
+            task.description.isEmpty
+                ? "Hora de completar sua tarefa!"
+                : task.description,
             finalDueDate,
           );
         } catch (e) {
@@ -136,11 +151,14 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         await fs.addTask(task);
       }
 
-      if (mounted) Navigator.of(context).pop(); 
+      if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(
+            content: Text('Erro ao salvar: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     } finally {
@@ -150,15 +168,20 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
 
   Future<void> _pickDateTime() async {
     final pickedDate = await showDatePicker(
-      context: context, initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime.now().subtract(const Duration(days: 365)), lastDate: DateTime(2030),
-      builder: (context, child) => Theme(data: AppTheme.lightTheme, child: child!),
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime(2030),
+      builder: (context, child) =>
+          Theme(data: AppTheme.lightTheme, child: child!),
     );
     if (pickedDate == null || !mounted) return;
 
     final pickedTime = await showTimePicker(
-      context: context, initialTime: _selectedTime ?? TimeOfDay.now(),
-      builder: (context, child) => Theme(data: AppTheme.lightTheme, child: child!),
+      context: context,
+      initialTime: _selectedTime ?? TimeOfDay.now(),
+      builder: (context, child) =>
+          Theme(data: AppTheme.lightTheme, child: child!),
     );
     if (pickedTime == null || !mounted) return;
 
@@ -172,7 +195,9 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-        top: 24, left: 24, right: 24,
+        top: 24,
+        left: 24,
+        right: 24,
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       child: SingleChildScrollView(
@@ -183,23 +208,57 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(_isEditing ? "Editar Tarefa" : "Nova Tarefa", style: Theme.of(context).textTheme.headlineMedium),
-                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                Text(
+                  _isEditing ? "Editar Tarefa" : "Nova Tarefa",
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
               ],
             ),
             const SizedBox(height: 16),
-            TextField(controller: _titleController, decoration: const InputDecoration(hintText: 'O que você precisa fazer?'), textCapitalization: TextCapitalization.sentences),
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                hintText: 'O que você precisa fazer?',
+              ),
+              textCapitalization: TextCapitalization.sentences,
+            ),
             const SizedBox(height: 12),
-            TextField(controller: _descController, decoration: const InputDecoration(hintText: 'Detalhe a tarefa (opcional)'), maxLines: 2, textCapitalization: TextCapitalization.sentences),
+            TextField(
+              controller: _descController,
+              decoration: const InputDecoration(
+                hintText: 'Detalhe a tarefa (opcional)',
+              ),
+              maxLines: 2,
+              textCapitalization: TextCapitalization.sentences,
+            ),
             const SizedBox(height: 20),
 
-            Text("Me lembre por:", style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              "Me lembre por:",
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 12),
             SegmentedButton<String>(
               segments: const [
-                ButtonSegment(value: 'none', label: Text('Sem Alarme'), icon: Icon(Icons.alarm_off)),
-                ButtonSegment(value: 'datetime', label: Text('Data/Hora'), icon: Icon(Icons.calendar_today)),
-                ButtonSegment(value: 'location', label: Text('Localização'), icon: Icon(Icons.place)),
+                ButtonSegment(
+                  value: 'none',
+                  label: Text('Sem Alarme'),
+                  icon: Icon(Icons.alarm_off),
+                ),
+                ButtonSegment(
+                  value: 'datetime',
+                  label: Text('Data/Hora'),
+                  icon: Icon(Icons.calendar_today),
+                ),
+                ButtonSegment(
+                  value: 'location',
+                  label: Text('Localização'),
+                  icon: Icon(Icons.place),
+                ),
               ],
               selected: {_reminderType},
               onSelectionChanged: (Set<String> newSelection) {
@@ -217,7 +276,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
 
             if (_reminderType != 'location') ...[
               const SizedBox(height: 8),
-              _buildSimpleLocationAttach()
+              _buildSimpleLocationAttach(),
             ],
 
             const SizedBox(height: 24),
@@ -227,10 +286,17 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _submit,
                 child: _isLoading
-                    ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    ? const SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
                     : Text(_isEditing ? "Salvar Alterações" : "Criar Tarefa"),
               ),
-            )
+            ),
           ],
         ),
       ),
@@ -240,17 +306,29 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   Widget _buildDateTimeUI() {
     String dateText = 'Tocar para Escolher';
     if (_selectedDate != null && _selectedTime != null) {
-      dateText = "${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year} às ${_selectedTime!.format(context)}";
+      dateText =
+          "${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year} às ${_selectedTime!.format(context)}";
     }
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: AppTheme.primaryBlue.withOpacity(0.05), borderRadius: BorderRadius.circular(24)),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryBlue.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(24),
+      ),
       child: Row(
         children: [
           const Icon(Icons.access_time_filled, color: AppTheme.primaryBlue),
           const SizedBox(width: 12),
-          Expanded(child: Text(dateText, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.primaryBlue))),
+          Expanded(
+            child: Text(
+              dateText,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppTheme.primaryBlue,
+              ),
+            ),
+          ),
           TextButton(onPressed: _pickDateTime, child: const Text("ALTERAR")),
         ],
       ),
@@ -260,44 +338,64 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   Widget _buildLocationUI() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: AppTheme.primaryBlue.withOpacity(0.05), borderRadius: BorderRadius.circular(24)),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryBlue.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(24),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Disparar alerta invisível por GPS:", style: TextStyle(fontWeight: FontWeight.w600, color: AppTheme.primaryBlue)),
+          const Text(
+            "Disparar alerta invisível por GPS:",
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: AppTheme.primaryBlue,
+            ),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
               ChoiceChip(
                 label: const Text("Ao Chegar no Local"),
                 selected: _locationTrigger == 'arrival',
-                onSelected: (val) { if(val) setState(() => _locationTrigger = 'arrival'); },
+                onSelected: (val) {
+                  if (val) setState(() => _locationTrigger = 'arrival');
+                },
               ),
               const SizedBox(width: 8),
               ChoiceChip(
                 label: const Text("Ao Sair do Local"),
                 selected: _locationTrigger == 'departure',
-                onSelected: (val) { if(val) setState(() => _locationTrigger = 'departure'); },
+                onSelected: (val) {
+                  if (val) setState(() => _locationTrigger = 'departure');
+                },
               ),
             ],
           ),
           const SizedBox(height: 8),
           const Text(
-             "📍 O lembrete Geográfico captura sua coordenada.",
-             style: TextStyle(fontSize: 12, color: Colors.grey),
-          )
+            "📍 O lembrete Geográfico captura sua coordenada.",
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildSimpleLocationAttach() {
-     return Row(
-       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-       children: [
-         const Text("Anexar pino do mapa nesta tarefa?", style: TextStyle(color: Colors.grey)),
-         Switch(value: _attachLocation, onChanged: (val) => setState(() => _attachLocation = val), activeColor: AppTheme.primaryBlue),
-       ],
-     );
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text(
+          "Anexar pino do mapa nesta tarefa?",
+          style: TextStyle(color: Colors.grey),
+        ),
+        Switch(
+          value: _attachLocation,
+          onChanged: (val) => setState(() => _attachLocation = val),
+          activeThumbColor: AppTheme.primaryBlue,
+        ),
+      ],
+    );
   }
 }

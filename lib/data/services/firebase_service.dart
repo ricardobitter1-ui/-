@@ -52,16 +52,15 @@ class FirebaseService {
         .map((snapshot) => snapshot.docs.map(_taskFromDoc).toList());
   }
 
-  /// Stream de tarefas SEM data (atemporais) — alimenta o Dashboard Inbox.
-  /// Não requer índice composto.
+  /// Stream de tarefas SEM data (atemporais).
+  /// Implementado via [getTasksStream] + filtro local para não exigir índice composto
+  /// (`ownerId` + `dueDate` + `createdAt`).
   Stream<List<TaskModel>> getAtemporalTasksStream() {
     if (uid == null) return Stream.value([]);
 
-    return _tasksCollection
-        .where('ownerId', isEqualTo: uid)
-        .where('dueDate', isNull: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map(_taskFromDoc).toList());
+    return getTasksStream().map(
+      (tasks) => tasks.where((t) => t.dueDate == null).toList(),
+    );
   }
 
   /// Stream de tarefas agendadas para uma data específica — alimenta o Calendário.
@@ -75,7 +74,10 @@ class FirebaseService {
 
     return _tasksCollection
         .where('ownerId', isEqualTo: uid)
-        .where('dueDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+        .where(
+          'dueDate',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
+        )
         .where('dueDate', isLessThan: Timestamp.fromDate(startOfNextDay))
         .orderBy('dueDate')
         .snapshots()
@@ -83,13 +85,17 @@ class FirebaseService {
   }
 
   /// Stream de tarefas de um grupo específico (com ou sem data).
+  /// Implementado em cima de [getTasksStream] + filtro local para não usar query
+  /// composta (`ownerId` + `groupId`), que exige índice no Firestore e em alguns
+  /// dispositivos tem sido associado a travamentos na UI.
   Stream<List<TaskModel>> getTasksByGroupStream(String groupId) {
     if (uid == null) return Stream.value([]);
+    final gid = groupId.trim();
+    if (gid.isEmpty) return Stream.value([]);
 
-    return _tasksCollection
-        .where('groupId', isEqualTo: groupId)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map(_taskFromDoc).toList());
+    return getTasksStream().map(
+      (tasks) => tasks.where((t) => t.groupId == gid).toList(),
+    );
   }
 
   // ─── TASK CRUD ────────────────────────────────────────────────────────────────
@@ -100,15 +106,14 @@ class FirebaseService {
 
     final taskData = task.toMap()..remove('id');
     taskData['ownerId'] = uid;
+    taskData['createdAt'] = FieldValue.serverTimestamp();
 
     await _tasksCollection.add(taskData);
   }
 
   /// Alterna status de Completo/Incompleto de uma tarefa.
   Future<void> toggleTaskCompletion(String taskId, bool currentStatus) async {
-    await _tasksCollection.doc(taskId).update({
-      'isCompleted': !currentStatus,
-    });
+    await _tasksCollection.doc(taskId).update({'isCompleted': !currentStatus});
   }
 
   /// Atualiza uma tarefa existente.
@@ -133,16 +138,23 @@ class FirebaseService {
     return _groupsCollection
         .where('members', arrayContains: uid)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => GroupModel.fromMap(doc.id, doc.data() as Map<String, dynamic>))
-            .toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map(
+                (doc) => GroupModel.fromMap(
+                  doc.id,
+                  doc.data() as Map<String, dynamic>,
+                ),
+              )
+              .toList(),
+        );
   }
 
   // ─── GROUP CRUD ───────────────────────────────────────────────────────────────
 
   /// Cria um novo grupo.
   /// Injeta automaticamente ownerId e members = [uid], ignorando os valores do modelo.
-  Future<DocumentReference> addGroup(GroupModel group) async {
+  Future<void> addGroup(GroupModel group) async {
     if (uid == null) throw Exception('Usuário não autenticado');
 
     final groupData = group.toMap();
@@ -151,7 +163,7 @@ class FirebaseService {
     groupData['members'] = [uid];
     groupData['createdAt'] = FieldValue.serverTimestamp();
 
-    return _groupsCollection.add(groupData);
+    await _groupsCollection.add(groupData);
   }
 
   /// Atualiza um grupo existente.
