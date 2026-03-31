@@ -1,11 +1,23 @@
 import 'package:flutter/material.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
+import '../../constants/geofence_constants.dart';
 import '../../data/models/tag_model.dart';
 import '../../data/models/task_model.dart';
 import '../../data/models/user_public_profile.dart';
 import '../../utils/scheduled_badge_label.dart';
 import '../theme/app_theme.dart';
 import 'custom_avatar.dart';
+
+String _locationReminderLabel(TaskModel task) {
+  final trigger =
+      task.locationTrigger == 'departure' ? 'Ao sair' : 'Ao chegar';
+  final r = effectiveGeofenceRadiusMeters(task).round();
+  final name = task.locationLabel?.trim();
+  if (name != null && name.isNotEmpty) {
+    return '$name · ${r}m · $trigger';
+  }
+  return '$trigger · ${r}m';
+}
 
 class TaskCard extends StatelessWidget {
   final TaskModel task;
@@ -43,7 +55,7 @@ class TaskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool hasLocation = task.latitude != null || task.locationTrigger != null;
+    final bool hasLocation = task.reminderType == 'location';
     final bool hasDate = task.dueDate != null;
     final bool hasAssignees = task.assigneeIds.isNotEmpty;
     final bool showMetaRow = hasLocation || hasDate || hasAssignees;
@@ -209,7 +221,7 @@ class TaskCard extends StatelessWidget {
                             if (hasLocation)
                               _buildBadge(
                                 icon: Icons.location_on_rounded,
-                                label: task.locationTrigger == 'departure' ? 'Ao Sair' : 'Localização',
+                                label: _locationReminderLabel(task),
                                 color: Colors.blue,
                               ),
                             if (hasDate && scheduleData != null)

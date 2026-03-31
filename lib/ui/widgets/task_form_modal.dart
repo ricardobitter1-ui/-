@@ -1,7 +1,11 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../business_logic/providers/task_provider.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
+import '../../constants/geofence_constants.dart';
 import '../../data/models/tag_model.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
@@ -10,6 +14,7 @@ import '../../data/services/location_service.dart';
 import '../../data/services/notification_service.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/task_model.dart';
+import '../screens/location_picker_screen.dart';
 import '../theme/app_theme.dart';
 import 'group_tag_name_color_dialog.dart';
 
@@ -39,6 +44,12 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   TimeOfDay? _selectedTime;
 
   String _locationTrigger = 'arrival';
+
+  /// Ponto e raio escolhidos no mapa (lembrete por localização).
+  double? _locationLat;
+  double? _locationLng;
+  double _locationRadiusMeters = kDefaultGeofenceRadiusMeters;
+  String? _locationLabel;
 
   bool _isLoading = false;
   final Set<String> _selectedAssigneeIds = {};
@@ -85,6 +96,12 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         _selectedTime = TimeOfDay.fromDateTime(task.dueDate!);
       }
       _locationTrigger = task.locationTrigger ?? 'arrival';
+      if (task.reminderType == 'location') {
+        _locationLat = task.latitude;
+        _locationLng = task.longitude;
+        _locationRadiusMeters = effectiveGeofenceRadiusMeters(task);
+        _locationLabel = task.locationLabel;
+      }
     }
   }
 
@@ -124,17 +141,46 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
 
       double? lat;
       double? lng;
+      double? geofenceRadius;
+      String? locationLabel;
       if (_reminderType == 'location') {
-        final position = await ref
-            .read(locationServiceProvider)
-            .getCurrentLocation();
-        if (position != null) {
-          lat = position.latitude;
-          lng = position.longitude;
-        } else {
-          lat = widget.initialTask?.latitude;
-          lng = widget.initialTask?.longitude;
+        if (_locationLat == null || _locationLng == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Escolha o local no mapa antes de salvar.'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+          setState(() => _isLoading = false);
+          return;
         }
+        if (!kIsWeb && Platform.isAndroid) {
+          final bgOk = await ref
+              .read(locationServiceProvider)
+              .ensureBackgroundLocationPermission();
+          if (!bgOk && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Para lembretes ao chegar/sair, permita localização '
+                  '“o tempo todo” nas configurações.',
+                ),
+                action: SnackBarAction(
+                  label: 'Abrir',
+                  onPressed: () => ref
+                      .read(locationServiceProvider)
+                      .openSystemLocationSettings(),
+                ),
+              ),
+            );
+          }
+        }
+        lat = _locationLat;
+        lng = _locationLng;
+        geofenceRadius = _locationRadiusMeters;
+        locationLabel = _locationLabel;
       }
 
       // titleSearchKey é derivado do título no modelo e reforçado em addTask/updateTask.
@@ -145,6 +191,8 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         isCompleted: widget.initialTask?.isCompleted ?? false,
         latitude: lat,
         longitude: lng,
+        geofenceRadiusMeters: geofenceRadius,
+        locationLabel: locationLabel,
         reminderType: _reminderType == 'none' ? null : _reminderType,
         dueDate: finalDueDate,
         locationTrigger: _reminderType == 'location' ? _locationTrigger : null,
@@ -170,13 +218,16 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
 
       if (_reminderType == 'datetime' && finalDueDate != null) {
         if (finalDueDate.isBefore(DateTime.now())) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Aviso: O horário agendado precisa ser no futuro!'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-          setState(() => _isLoading = false);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content:
+                    Text('Aviso: O horário agendado precisa ser no futuro!'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+            setState(() => _isLoading = false);
+          }
           return;
         }
 
@@ -733,7 +784,51 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     );
   }
 
+  Future<void> _openLocationOnMap() async {
+    final loc = ref.read(locationServiceProvider);
+    final ok = await loc.ensureWhenInUseLocationPermission();
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Permita acesso à localização para marcar o ponto no mapa.',
+          ),
+        ),
+      );
+      return;
+    }
+    final result = await Navigator.of(context).push<LocationPickerResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => LocationPickerScreen(
+          initialLatitude: _locationLat,
+          initialLongitude: _locationLng,
+          initialRadiusMeters: _locationRadiusMeters,
+          initialLabel: _locationLabel,
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _locationLat = result.latitude;
+        _locationLng = result.longitude;
+        _locationRadiusMeters = result.radiusMeters;
+        _locationLabel = result.locationLabel;
+      });
+    }
+  }
+
   Widget _buildLocationUI() {
+    final theme = Theme.of(context);
+    final hasPoint = _locationLat != null && _locationLng != null;
+    final summary = hasPoint
+        ? '${_locationLat!.toStringAsFixed(5)}, ${_locationLng!.toStringAsFixed(5)} · ${_locationRadiusMeters.round()} m'
+        : 'Nenhum ponto escolhido';
+    final labelLine = (_locationLabel != null && _locationLabel!.isNotEmpty)
+        ? _locationLabel!
+        : null;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -741,21 +836,29 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            "Disparar alerta invisível por GPS:",
-            style: TextStyle(
-              fontSize: 14,
+          Text(
+            'Lembrete por geofence (Android)',
+            style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: AppTheme.brandPrimary,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
+          Text(
+            'O app avisa quando você entra ou sai da área no mapa. '
+            'Funciona em segundo plano com baixo uso de bateria em relação ao GPS contínuo. '
+            'No máximo $kMaxRegisteredGeofences lembretes ativos por dispositivo.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 10),
           Row(
             children: [
               ChoiceChip(
-                label: const Text("Ao Chegar"),
+                label: const Text('Ao chegar'),
                 selected: _locationTrigger == 'arrival',
                 visualDensity: VisualDensity.compact,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -765,7 +868,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
               ),
               const SizedBox(width: 8),
               ChoiceChip(
-                label: const Text("Ao Sair"),
+                label: const Text('Ao sair'),
                 selected: _locationTrigger == 'departure',
                 visualDensity: VisualDensity.compact,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -775,11 +878,26 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          const Text(
-            "📍 O lembrete captura sua coordenada atual.",
-            style: TextStyle(fontSize: 11, color: Colors.grey),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _openLocationOnMap,
+            icon: const Icon(Icons.map_rounded, size: 20),
+            label: const Text('Escolher no mapa (OpenStreetMap)'),
           ),
+          const SizedBox(height: 8),
+          Text(
+            summary,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (labelLine != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              labelLine,
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
         ],
       ),
     );

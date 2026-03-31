@@ -13,6 +13,10 @@ class TaskModel {
   final String description;
   final double? latitude;
   final double? longitude;
+  /// Raio do geofence em metros (lembrete por localização). Padrão efetivo 100 se null em tarefas antigas.
+  final double? geofenceRadiusMeters;
+  /// Rótulo opcional para exibição (ex.: nome do lugar); não afeta o SO.
+  final String? locationLabel;
   final bool isCompleted;
 
   final String? reminderType; // 'datetime' ou 'location' ou null
@@ -35,6 +39,8 @@ class TaskModel {
     String? resolvedSearchKey,
     this.latitude,
     this.longitude,
+    this.geofenceRadiusMeters,
+    this.locationLabel,
     this.isCompleted = false,
     this.reminderType,
     this.dueDate,
@@ -54,6 +60,8 @@ class TaskModel {
     String? description,
     Object? latitude = _unset,
     Object? longitude = _unset,
+    Object? geofenceRadiusMeters = _unset,
+    Object? locationLabel = _unset,
     bool? isCompleted,
     Object? reminderType = _unset,
     Object? dueDate = _unset,
@@ -72,6 +80,12 @@ class TaskModel {
       resolvedSearchKey: normalizeTitleSearchKey(newTitle),
       latitude: identical(latitude, _unset) ? this.latitude : latitude as double?,
       longitude: identical(longitude, _unset) ? this.longitude : longitude as double?,
+      geofenceRadiusMeters: identical(geofenceRadiusMeters, _unset)
+          ? this.geofenceRadiusMeters
+          : geofenceRadiusMeters as double?,
+      locationLabel: identical(locationLabel, _unset)
+          ? this.locationLabel
+          : locationLabel as String?,
       isCompleted: isCompleted ?? this.isCompleted,
       reminderType: identical(reminderType, _unset) ? this.reminderType : reminderType as String?,
       dueDate: identical(dueDate, _unset) ? this.dueDate : dueDate as DateTime?,
@@ -92,6 +106,8 @@ class TaskModel {
       'description': description,
       'latitude': latitude,
       'longitude': longitude,
+      'geofenceRadiusMeters': geofenceRadiusMeters,
+      'locationLabel': locationLabel,
       'isCompleted': isCompleted,
       'reminderType': reminderType,
       'dueDate': dueDate != null ? Timestamp.fromDate(dueDate!) : null,

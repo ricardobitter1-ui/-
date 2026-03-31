@@ -61,6 +61,9 @@ class FirebaseService {
           (fromDoc != null && fromDoc.isNotEmpty) ? fromDoc : null,
       latitude: (data['latitude'] as num?)?.toDouble(),
       longitude: (data['longitude'] as num?)?.toDouble(),
+      geofenceRadiusMeters:
+          (data['geofenceRadiusMeters'] as num?)?.toDouble(),
+      locationLabel: data['locationLabel'] as String?,
       isCompleted: data['isCompleted'] ?? false,
       reminderType: data['reminderType'],
       dueDate: (data['dueDate'] as Timestamp?)?.toDate(),

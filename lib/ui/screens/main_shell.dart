@@ -1,22 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../business_logic/providers/task_provider.dart';
+import '../../data/services/geofence_platform_service.dart';
 import '../theme/app_theme.dart';
 import 'groups_screen.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
 
-class MainShell extends StatefulWidget {
+class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
 
   @override
-  State<MainShell> createState() => _MainShellState();
+  ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends ConsumerState<MainShell> {
   int _index = 1; // default: Hoje (aba principal)
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(tasksStreamProvider, (previous, next) {
+      next.whenData((tasks) {
+        GeofencePlatformService.syncWithTasks(tasks);
+      });
+    });
     final screens = <Widget>[
       const GroupsScreen(),
       const HomeScreen(),

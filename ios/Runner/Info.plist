@@ -66,6 +66,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>O app usa sua localização para lembretes no mapa e por geofence.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Para avisar ao chegar ou sair de um lugar, o app precisa de localização em segundo plano.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
