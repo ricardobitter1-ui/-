@@ -143,6 +143,7 @@ class _FilteredTaskListScreenState
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          persist: false,
           content: Text('Tarefa "${task.title}" removida.'),
           action: SnackBarAction(
             label: 'Desfazer',
@@ -160,7 +161,7 @@ class _FilteredTaskListScreenState
           ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF2B2D42),
-          duration: const Duration(seconds: 5),
+          duration: const Duration(seconds: 3),
         ),
       );
     }
@@ -319,7 +320,7 @@ class _FilteredTaskListScreenState
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [AppTheme.primaryBlue, Color(0xFF5A189A)],
+                colors: [AppTheme.brandPrimary, AppTheme.brandSecondary],
               ),
             ),
             inactiveDayDecoration: BoxDecoration(
@@ -342,13 +343,13 @@ class _FilteredTaskListScreenState
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: AppTheme.primaryBlue.withValues(alpha: 0.05),
+                color: AppTheme.brandPrimary.withValues(alpha: 0.05),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.check_circle_outline_rounded,
                 size: 48,
-                color: AppTheme.primaryBlue,
+                color: AppTheme.brandPrimary,
               ),
             ),
             const SizedBox(height: 16),

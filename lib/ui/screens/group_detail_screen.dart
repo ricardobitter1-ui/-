@@ -13,6 +13,7 @@ import '../theme/color_utils.dart';
 import '../theme/group_icon.dart';
 import '../widgets/custom_avatar.dart';
 import '../widgets/edit_group_sheet.dart';
+import '../widgets/group_tag_name_color_dialog.dart';
 import '../widgets/partitioned_group_task_list.dart';
 import '../widgets/task_form_modal.dart';
 
@@ -91,30 +92,81 @@ void _openManageGroupTags(
                                 radius: 14,
                               ),
                               title: Text(t.name),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete_outline_rounded),
-                                onPressed: () async {
-                                  try {
-                                    await ref2
-                                        .read(firebaseServiceProvider)
-                                        .deleteGroupTag(g.id, t.id);
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Etiqueta removida.'),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined),
+                                    onPressed: () async {
+                                      final result = await showDialog<
+                                          ({String name, int color})>(
+                                        context: context,
+                                        builder: (dctx) =>
+                                            GroupTagNameColorDialog(
+                                          initialTag: t,
                                         ),
                                       );
-                                    }
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(content: Text('$e')),
-                                      );
-                                    }
-                                  }
-                                },
+                                      if (result == null || !context.mounted) {
+                                        return;
+                                      }
+                                      try {
+                                        await ref2
+                                            .read(firebaseServiceProvider)
+                                            .updateGroupTag(
+                                              groupId: g.id,
+                                              tagId: t.id,
+                                              name: result.name,
+                                              color: result.color,
+                                            );
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content:
+                                                  Text('Etiqueta atualizada.'),
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(content: Text('$e')),
+                                          );
+                                        }
+                                      }
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.delete_outline_rounded,
+                                    ),
+                                    onPressed: () async {
+                                      try {
+                                        await ref2
+                                            .read(firebaseServiceProvider)
+                                            .deleteGroupTag(g.id, t.id);
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Etiqueta removida.',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(content: Text('$e')),
+                                          );
+                                        }
+                                      }
+                                    },
+                                  ),
+                                ],
                               ),
                             );
                           },
@@ -656,7 +708,7 @@ class GroupDetailScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openCreateTaskForGroup(context, g),
-        backgroundColor: AppTheme.primaryBlue,
+        backgroundColor: AppTheme.brandPrimary,
         child: const Icon(Icons.add),
       ),
     );

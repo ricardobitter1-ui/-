@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../constants/group_color_presets.dart';
 import '../../data/models/group_model.dart';
 import '../../data/services/firebase_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
+import '../theme/group_icon.dart';
 
 /// Sheet para editar nome, ícone e cor de um grupo existente (apenas metadados).
 class EditGroupSheet extends ConsumerStatefulWidget {
@@ -20,22 +22,23 @@ class _EditGroupSheetState extends ConsumerState<EditGroupSheet> {
   late String _icon;
   late String _color;
 
-  static const _colorOptions = <String>[
-    '#0052FF',
-    '#5A189A',
-    '#FF6B6B',
-    '#2EC4B6',
-    '#FFB703',
-    '#2B2D42',
-  ];
+  List<String> _colorsForPicker() {
+    final n = normalizeGroupColorHexForLookup(_color);
+    if (n.isEmpty) return kGroupColorPresets;
+    final has = kGroupColorPresets.any(
+      (p) => normalizeGroupColorHexForLookup(p) == n,
+    );
+    if (has) return kGroupColorPresets;
+    return [...kGroupColorPresets, n];
+  }
 
   @override
   void initState() {
     super.initState();
     final g = widget.group;
     _nameController = TextEditingController(text: g.name);
-    _icon = g.icon.isNotEmpty ? g.icon : 'group';
-    _color = g.color.isNotEmpty ? g.color : '#0052FF';
+    _icon = coerceGroupIconPickerKey(g.icon.isNotEmpty ? g.icon : 'group');
+    _color = g.color.isNotEmpty ? g.color : kDefaultGroupColorHex;
   }
 
   @override
@@ -71,95 +74,85 @@ class _EditGroupSheetState extends ConsumerState<EditGroupSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        top: 20,
-        left: 20,
-        right: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Editar grupo',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              IconButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                icon: const Icon(Icons.close),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              hintText: 'Nome do grupo',
+    return SingleChildScrollView(
+      child: Padding(
+        padding: EdgeInsets.only(
+          top: 20,
+          left: 20,
+          right: 20,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Editar grupo',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
             ),
-            textCapitalization: TextCapitalization.sentences,
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              const Text('Ícone:', style: TextStyle(color: Colors.grey)),
-              const SizedBox(width: 12),
-              DropdownButton<String>(
-                value: _icon,
-                items: const [
-                  DropdownMenuItem(value: 'group', child: Text('group')),
-                  DropdownMenuItem(value: 'work', child: Text('work')),
-                  DropdownMenuItem(value: 'home', child: Text('home')),
-                  DropdownMenuItem(
-                    value: 'fitness_center',
-                    child: Text('fitness'),
-                  ),
-                  DropdownMenuItem(value: 'school', child: Text('school')),
-                ],
-                onChanged: (v) => setState(() => _icon = v ?? 'group'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                hintText: 'Nome do grupo',
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Text('Cor:', style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final c in _colorOptions)
-                GestureDetector(
-                  onTap: () => setState(() => _color = c),
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: parseAppHexColor(c),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: c == _color
-                            ? AppTheme.primaryBlue
-                            : Colors.transparent,
-                        width: 3,
+              textCapitalization: TextCapitalization.sentences,
+            ),
+            const SizedBox(height: 16),
+            const Text('Ícone', style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 8),
+            GroupIconPickerBar(
+              selectedKey: _icon,
+              onSelect: (k) => setState(() => _icon = k),
+              selectionBorderColor: AppTheme.brandPrimary,
+            ),
+            const SizedBox(height: 16),
+            const Text('Cor', style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final c in _colorsForPicker())
+                  GestureDetector(
+                    onTap: () => setState(() => _color = c),
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: parseAppHexColor(c),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: normalizeGroupColorHexForLookup(c) ==
+                                  normalizeGroupColorHexForLookup(_color)
+                              ? AppTheme.brandPrimary
+                              : Colors.transparent,
+                          width: 3,
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 54,
-            child: ElevatedButton(
-              onPressed: _submit,
-              child: const Text('Guardar'),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 54,
+              child: ElevatedButton(
+                onPressed: _submit,
+                child: const Text('Guardar'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

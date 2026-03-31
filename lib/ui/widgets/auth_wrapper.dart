@@ -26,9 +26,11 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
       final uid = user?.uid;
       if (uid != null && uid != _lastSyncedUid) {
         _lastSyncedUid = uid;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          ref.read(firebaseServiceProvider).ensureCollaborationBackfill();
-          ref.read(firebaseServiceProvider).upsertCurrentUserProfile();
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          final fs = ref.read(firebaseServiceProvider);
+          await fs.ensureCollaborationBackfill();
+          await fs.migrateLegacyGroupColorsIfNeeded();
+          await fs.upsertCurrentUserProfile();
           ref.read(fcmServiceProvider).syncTokenForCurrentUser();
         });
       }

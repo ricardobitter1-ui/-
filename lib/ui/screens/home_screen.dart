@@ -62,7 +62,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               const Icon(
                 Icons.notifications_active_rounded,
                 size: 64,
-                color: AppTheme.primaryBlue,
+                color: AppTheme.brandPrimary,
               ),
               const SizedBox(height: 16),
               const Text(
@@ -151,6 +151,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          persist: false,
           content: Text('Tarefa "${task.title}" removida.'),
           action: SnackBarAction(
             label: 'Desfazer',
@@ -169,7 +170,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF2B2D42),
-          duration: const Duration(seconds: 5),
+          duration: const Duration(seconds: 3),
         ),
       );
     }
@@ -295,7 +296,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           'Ver todas as ${todayActive.length} tarefas de hoje',
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: AppTheme.primaryBlue,
+                            color: AppTheme.brandPrimary,
                           ),
                         ),
                       ),
@@ -449,13 +450,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: AppTheme.primaryBlue.withValues(alpha: 0.05),
+            color: AppTheme.brandPrimary.withValues(alpha: 0.05),
             shape: BoxShape.circle,
           ),
           child: const Icon(
             Icons.check_circle_outline_rounded,
             size: 48,
-            color: AppTheme.primaryBlue,
+            color: AppTheme.brandPrimary,
           ),
         ),
         const SizedBox(height: 16),
@@ -474,7 +475,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             'Ver tarefas agendadas',
             style: TextStyle(
               fontWeight: FontWeight.w700,
-              color: AppTheme.primaryBlue,
+              color: AppTheme.brandPrimary,
             ),
           ),
         ),

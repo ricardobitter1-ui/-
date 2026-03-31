@@ -32,7 +32,7 @@ class DailyProgressIndicator extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
-                color: AppTheme.primaryBlue,
+                color: AppTheme.brandPrimary,
               ),
             ),
           ],
@@ -44,7 +44,7 @@ class DailyProgressIndicator extends StatelessWidget {
               height: 8,
               width: double.infinity,
               decoration: BoxDecoration(
-                color: AppTheme.primaryBlue.withOpacity(0.1),
+                color: AppTheme.brandPrimary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
@@ -55,14 +55,14 @@ class DailyProgressIndicator extends StatelessWidget {
               width: MediaQuery.of(context).size.width * progress,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [AppTheme.primaryBlue, Color(0xFF00FFD1)],
+                  colors: [AppTheme.brandPrimary, AppTheme.successCyan],
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                 ),
                 borderRadius: BorderRadius.circular(10),
                 boxShadow: [
                   BoxShadow(
-                    color: AppTheme.primaryBlue.withOpacity(0.2),
+                    color: AppTheme.brandPrimary.withValues(alpha: 0.2),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),

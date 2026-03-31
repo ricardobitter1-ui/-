@@ -69,13 +69,13 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: AppTheme.primaryBlue.withValues(alpha: 0.05),
+                        color: AppTheme.brandPrimary.withValues(alpha: 0.05),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
                         Icons.folder_open_rounded,
                         size: 48,
-                        color: AppTheme.primaryBlue,
+                        color: AppTheme.brandPrimary,
                       ),
                     ),
                     const SizedBox(height: 16),

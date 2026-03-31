@@ -37,7 +37,7 @@ class CompletedTasksSectionHeader extends StatelessWidget {
                     expanded
                         ? Icons.expand_less_rounded
                         : Icons.expand_more_rounded,
-                    color: AppTheme.primaryBlue,
+                    color: AppTheme.brandPrimary,
                   ),
                   const SizedBox(width: 8),
                   Text(

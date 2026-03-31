@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../constants/group_color_presets.dart';
+
 class GroupModel {
   final String id;
   final String name;
@@ -45,7 +47,7 @@ class GroupModel {
       id: id,
       name: data['name'] as String? ?? 'Sem nome',
       icon: data['icon'] as String? ?? 'group',
-      color: data['color'] as String? ?? '#0052FF',
+      color: data['color'] as String? ?? kDefaultGroupColorHex,
       ownerId: owner,
       members: memberList,
       admins: adminList,

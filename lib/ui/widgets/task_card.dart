@@ -62,7 +62,7 @@ class TaskCard extends StatelessWidget {
 
     final Color scheduleColor = scheduleData != null && scheduleData.isOverdue
         ? Theme.of(context).colorScheme.error
-        : AppTheme.primaryBlue;
+        : AppTheme.brandPrimary;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -317,10 +317,10 @@ class TaskCard extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(
-            color: task.isCompleted ? AppTheme.primaryBlue : Colors.grey.shade300,
+            color: task.isCompleted ? AppTheme.brandPrimary : Colors.grey.shade300,
             width: 2,
           ),
-          color: task.isCompleted ? AppTheme.primaryBlue : Colors.white,
+          color: task.isCompleted ? AppTheme.brandPrimary : Colors.white,
         ),
         child: task.isCompleted
             ? const Icon(Icons.check, size: 16, color: Colors.white)

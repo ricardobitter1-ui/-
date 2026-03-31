@@ -19,7 +19,7 @@ class CustomAvatar extends StatelessWidget {
       return CircleAvatar(
         radius: radius,
         backgroundImage: NetworkImage(photoUrl!),
-        backgroundColor: AppTheme.primaryBlue.withOpacity(0.1),
+        backgroundColor: AppTheme.brandPrimary.withValues(alpha: 0.1),
       );
     }
 
@@ -34,13 +34,13 @@ class CustomAvatar extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: const LinearGradient(
-          colors: [AppTheme.primaryBlue, Color(0xFF5A189A)],
+          colors: [AppTheme.brandPrimary, AppTheme.brandSecondary],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.primaryBlue.withOpacity(0.3),
+            color: AppTheme.brandPrimary.withValues(alpha: 0.3),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),

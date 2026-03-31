@@ -11,21 +11,7 @@ import '../../data/services/notification_service.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/task_model.dart';
 import '../theme/app_theme.dart';
-
-const _kPresetTagColors = <int>[
-  0xFFE53935,
-  0xFFD81B60,
-  0xFF8E24AA,
-  0xFF5E35B1,
-  0xFF3949AB,
-  0xFF1E88E5,
-  0xFF00897B,
-  0xFF43A047,
-  0xFFFDD835,
-  0xFFF4511E,
-  0xFF6D4C41,
-  0xFF546E7A,
-];
+import 'group_tag_name_color_dialog.dart';
 
 class TaskFormModal extends ConsumerStatefulWidget {
   final TaskModel? initialTask;
@@ -303,7 +289,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   Future<void> _showNewTagDialog(String groupId) async {
     final result = await showDialog<({String name, int color})>(
       context: context,
-      builder: (ctx) => const _NewGroupTagDialogContent(),
+      builder: (ctx) => const GroupTagNameColorDialog(),
     );
     if (result == null || !mounted) return;
     try {
@@ -637,7 +623,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         padding: const EdgeInsets.only(bottom: 6),
         child: Material(
           color: selected
-              ? AppTheme.primaryBlue.withValues(alpha: 0.1)
+              ? AppTheme.brandPrimary.withValues(alpha: 0.1)
               : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
           borderRadius: BorderRadius.circular(10),
           child: InkWell(
@@ -650,7 +636,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: selected
-                      ? AppTheme.primaryBlue
+                      ? AppTheme.brandPrimary
                       : theme.colorScheme.outline.withValues(alpha: 0.28),
                   width: selected ? 1.5 : 1,
                 ),
@@ -661,7 +647,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                     icon,
                     size: 20,
                     color: selected
-                        ? AppTheme.primaryBlue
+                        ? AppTheme.brandPrimary
                         : theme.colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 10),
@@ -673,7 +659,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: selected
-                            ? AppTheme.primaryBlue
+                            ? AppTheme.brandPrimary
                             : theme.colorScheme.onSurface,
                       ),
                     ),
@@ -681,7 +667,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                   if (selected)
                     const Icon(
                       Icons.check_circle,
-                      color: AppTheme.primaryBlue,
+                      color: AppTheme.brandPrimary,
                       size: 18,
                     ),
                 ],
@@ -724,12 +710,12 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppTheme.primaryBlue.withValues(alpha: 0.05),
+        color: AppTheme.brandPrimary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          const Icon(Icons.access_time_filled, color: AppTheme.primaryBlue, size: 20),
+          const Icon(Icons.access_time_filled, color: AppTheme.brandPrimary, size: 20),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -737,7 +723,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: AppTheme.primaryBlue,
+                color: AppTheme.brandPrimary,
               ),
             ),
           ),
@@ -751,7 +737,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppTheme.primaryBlue.withValues(alpha: 0.05),
+        color: AppTheme.brandPrimary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -762,7 +748,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: AppTheme.primaryBlue,
+              color: AppTheme.brandPrimary,
             ),
           ),
           const SizedBox(height: 8),
@@ -796,92 +782,6 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Diálogo com [TextEditingController] próprio — dispose só após a rota fechar (evita IME após dispose).
-class _NewGroupTagDialogContent extends StatefulWidget {
-  const _NewGroupTagDialogContent();
-
-  @override
-  State<_NewGroupTagDialogContent> createState() =>
-      _NewGroupTagDialogContentState();
-}
-
-class _NewGroupTagDialogContentState extends State<_NewGroupTagDialogContent> {
-  late final TextEditingController _nameCtrl;
-  late int _pickedColor;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameCtrl = TextEditingController();
-    _pickedColor = _kPresetTagColors.first;
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Nova etiqueta'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _nameCtrl,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                hintText: 'Nome (ex.: Verduras)',
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _kPresetTagColors.map((c) {
-                final sel = _pickedColor == c;
-                return GestureDetector(
-                  onTap: () => setState(() => _pickedColor = c),
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Color(c),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: sel ? Colors.black : Colors.transparent,
-                        width: 3,
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
-        ),
-        TextButton(
-          onPressed: () {
-            final name = _nameCtrl.text.trim();
-            if (name.isEmpty) return;
-            Navigator.pop(context, (name: name, color: _pickedColor));
-          },
-          child: const Text('Criar'),
-        ),
-      ],
     );
   }
 }

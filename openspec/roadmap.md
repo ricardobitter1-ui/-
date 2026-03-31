@@ -109,3 +109,4 @@ Como Product Manager Sênior, este roadmap foca na criação de uma plataforma d
 2. **Fase 6:** abrir change para lista concluídas + animação + refinamentos com tags (filtros, etc.), conforme macro acima.
 3. **Dependências:** Fase 6 pode ser change separada da Fase 5 já entregue.
 4. Itens históricos da sprint antiga (Update Task, TaskCard, DB grupos) **arquivar ou revisar** contra o estado atual do repositório antes de priorizar junto com as novas fases.
+ 

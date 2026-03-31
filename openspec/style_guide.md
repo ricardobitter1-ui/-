@@ -1,95 +1,130 @@
-# 🎨 Visual Style Guide: Premium Task App
+# Visual Style Guide: Premium Task App
 
-Este documento serve como a "estrela guia" para a estética visual do app, garantindo consistência em cores, tipografia e elementos de interface (UI).
+Este documento serve como referência para a estética visual do app: cores, tipografia e padrões de UI.
 
 ## 1. Paleta de Cores (Theming)
 
-A paleta transita entre o profissionalismo do Azul Royal e a sofisticação do Dark Mode pontual.
+### Ações e foco (marca)
 
-### 🔵 Cores Primárias (Ação & Foco)
-- **Primary Blue**: `#0052FF` - Vibrante, moderno, usado para botões principais e charts.
-- **Accent Indigo**: `#5A189A` - Tom de elegância, usado para categorias e detalhes.
-- **Success Cyan**: `#00F5D4` - Usado para indicadores de 100% de conclusão.
+- **Brand primary** `#5F6FCE` — Lavanda profunda, alinhada aos quadrantes pastel (`AppTheme.brandPrimary`). FAB, `ElevatedButton`, foco de `TextField`, `ColorScheme.primary`, ícones/labels selecionados na barra inferior.
+- **Brand secondary** `#9B8AD4` — Roxo suave para gradientes com a marca (ex. cabeçalho de listas filtradas, avatar sem foto).
 
-### 🌑 Tons Neutros & Superfícies
-- **Background Light**: `#F8F9FF` - Um branco com "gelo" azulado, muito mais limpo que o cinza padrão.
-- **Dark Surface**: `#121212` - Para os "Focus Cards" (cards pretos de destaque).
-- **Soft Border**: `rgba(0, 0, 0, 0.05)` - Bordas quase invisíveis para separação.
+O azul elétrico `#0052FF` deixou de ser cor de produto; só aparece em dados legados (ex. migração de cores de grupo no Firestore).
+
+### Quadrantes da home (summary cards)
+
+Gradientes em `_DashboardTile` em `lib/ui/screens/home_screen.dart` — estilo pastel, texto branco sobre o gradiente:
+
+| Card        | Gradiente (início → fim)   | Uso                          |
+| ----------- | -------------------------- | ---------------------------- |
+| Hoje        | `#7B8CDE` → `#9FAEE6`      | Tarefas com data para hoje   |
+| Agendadas   | `#E8C547` → `#F0D86E`      | Outras datas futuras         |
+| Todas       | `#7DCFB6` → `#A0DFCD`      | Inventário completo          |
+| Atrasadas   | `#E8A0BF` → `#F0BDD4`      | Pendentes com prazo passado  |
+
+Sombra: `gradient.first` com α ~0,25, blur ~12, offset Y 4.
+
+### Cores de grupo (presets v2)
+
+Os grupos usam **um hex sólido** (`GroupModel.color`), alinhado à mesma família pastel dos quadrantes. Lista canónica em `lib/constants/group_color_presets.dart` (`kGroupColorPresets`):
+
+- `#7B8CDE` — lavanda (referência “Hoje”)
+- `#9B8AD4` — roxo suave
+- `#E8A0BF` — rosa/coral (referência “Atrasadas”)
+- `#7DCFB6` — menta (referência “Todas”)
+- `#E8C547` — âmbar (referência “Agendadas”)
+- `#8B95B5` — ardósia / neutro frio
+- `#A0DFCD` — menta claro
+- `#F0D86E` — amarelo claro
+
+Fallback quando o documento Firestore não tem `color`: `kDefaultGroupColorHex` (`#7B8CDE`). Cores antigas do picker v1 (`#0052FF`, `#5A189A`, etc.) são migradas uma vez por instalação para estes presets quando o utilizador é admin do grupo.
+
+### Accent e sucesso (legado / detalhes)
+
+- **Indigo forte** `#5A189A` — legado; gradientes de UI usam `brandPrimary` + `brandSecondary`.
+- **Success Cyan** `#00F5D4` — preenchimento da barra de progresso nos **Group Rail Cards** e extremo do gradiente no indicador de progresso diário (`AppTheme.successCyan`).
+
+### Tons neutros e superfícies
+
+- **Background Light**: `#F8F9FF` — branco com gelo azulado.
+- **Dark Surface**: `#121212` — focus cards escuros (não como fundo único do rail de grupos).
+- **Texto títulos**: `#2B2D42`.
+- **Soft Border**: `rgba(0, 0, 0, 0.05)`.
 
 ---
 
 ## 2. Tipografia (Typography)
 
-Foco em hierarquia clara e leitura rápida.
-
-- **Fonte Recomendada**: `Inter` ou `Outfit` (Google Fonts).
-- **Headings**:
-  - `Display` (Hello, User): Bold/ExtraBold, Letter spacing -1.0.
-  - `Title`: SemiBold, Cor: `#2B2D42`.
-- **Body**:
-  - `Medium`: Regular, Cor: `#6C757D`, Linha: 1.5.
-  - `Small`: Medium, Cor: `#A0AEC0` (para legendas e datas).
+- **Fonte global**: **Nunito** (`GoogleFonts.nunitoTextTheme` em `lib/ui/theme/app_theme.dart`) — forma arredondada e legível em UI densa.
+- **Headings**: pesos 800/600, cor `#2B2D42`, letter spacing ~-1,0 onde aplicável.
+- **Body**: cor `#6C757D`, ~16px; app bar título com Nunito bold ~24px.
 
 ---
 
-## 3. Elementos Visuais (UI Atoms)
+## 3. Navegação inferior (Main shell)
 
-A "assinatura" visual do app é baseada em curvas suaves e profundidade.
+Material 3 `NavigationBar` em `lib/ui/screens/main_shell.dart`:
 
-### 📐 Formas (Shapes)
-- **Standard Radius**: `24px` (Cards, Modais).
-- **Hero Radius**: `32px` (Elementos de cabeçalho ou FAB).
-- **Pill Radius**: `50px` (Tags e indicadores de status).
-
-### 🌫️ Profundidade & Efeitos
-- **Soft Shadows**: Sombras largas com blur de 20px a 30px, mas opacidade baixíssima (3-5%).
-- **Glassmorphism**: 
-  - `BackdropFilter` com blur de 10px.
-  - Opacidade de 70-80% em modais sobrepostos.
-- **Gradients**:
-  - Linear (Top to Bottom): `#0052FF` -> `#5A189A` (para cards de progresso).
+- **Topo**: `ClipRRect` com raio 20px nos cantos superiores.
+- **Superfície**: branco (`AppTheme.cardSurface`), `surfaceTintColor: transparent` na barra para evitar lavado azulado do M3.
+- **Tema** (`navigationBarTheme` em `app_theme.dart`): indicador do item ativo com `brandPrimary` α ~0,14 e pill arredondado; ícone e rótulo selecionados em `brandPrimary`; não selecionados em cinza `#6C757D`; sombra discreta; `labelBehavior: alwaysShow`.
 
 ---
 
-## 4. Iconografia & Micro-interações
+## 4. Elementos Visuais (UI Atoms)
 
-- **Style**: Line icons com cantos levemente arredondados (`Round` ou `Soft`).
-- **Estados**:
-  - **Check**: Quando marcado, o ícone deve "explodir" levemente (Scale animation) antes de mudar de cor.
-  - **Progress**: Barras de progresso devem ter o preenchimento arredondado e brilho sutil.
+### Formas (Shapes)
 
----
+- **Standard Radius**: `24px` (cards, modais).
+- **Hero Radius**: `32px`.
+- **Pill**: `50px` (tags / status).
 
-## 5. Group Rail Cards (aba **Hoje**)
+### Profundidade
 
-Carrossel horizontal de mini-cards por grupo — alinhado ao fundo claro do app; **não** usar `#121212` como fundo único destes cards.
-
-| Elemento | Regra |
-|----------|--------|
-| **Cor base** | Hex do grupo (`GroupModel.color`). Parsing centralizado com fallback **Primary Blue** se inválido. |
-| **Contraste** | Se a luminância relativa (WCAG sRGB) for alta (cor clara), fazer **lerp** em direção a `#2B2D42` até \(L \leq 0{,}40\), garantindo **texto branco** legível. |
-| **Gradiente** | `LinearGradient` `topLeft` → `bottomRight`: topo com ~14% de mix com branco; base = cor normalizada. |
-| **Ícone** | Círculo 40px, fundo branco **α 18%**, ícone branco **α 95%**. Mapear `group` / `work` / `home` / `fitness_center` / `school` → ícones Material `*_rounded`; fallback `groups_rounded`. |
-| **Tipografia** | Nome: branco, **w800**, ~15px, até 2 linhas. Linha de estatísticas: branco **α 72%**, 12px, **w600**. |
-| **Progresso** | Track: branco **α 22%**. Preenchimento: **Success Cyan** `#00F5D4` (regra única no rail). |
-| **Sombra** | Preta **α 7%**, blur ~18px, offset Y 6px. |
-| **Raio** | `20px` no card (alinhado ao rail atual). |
-
-Implementação de referência: `lib/ui/widgets/group_rail_card.dart`, `lib/ui/theme/color_utils.dart`, `lib/ui/theme/group_icon.dart`.
+- Sombras suaves, blur 20–30px, opacidade baixa (3–5%).
+- **Glassmorphism**: blur ~10px, opacidade 70–80% em modais.
 
 ---
 
-## 📊 Aplicação Sugerida (Layout)
+## 5. Iconografia e micro-interações
+
+- Estilo: ícones Material **rounded** onde aplicável.
+- Check e progresso: animações subtis e barras com cantos arredondados.
+
+---
+
+## 6. Group Rail Cards (aba Hoje)
+
+Carrossel horizontal de mini-cards por grupo — fundo claro do app; **não** usar `#121212` como fundo único destes cards.
+
+| Elemento      | Regra |
+| ------------- | ----- |
+| **Cor base**  | Hex do grupo (`GroupModel.color`). Parsing com `parseAppHexColor`; fallback `kDefaultGroupColorHex` se inválido. |
+| **Contraste** | Se luminância alta, **lerp** em direção a `#2B2D42` até texto branco legível (`railCardSurfaceForWhiteText` em `color_utils.dart`). |
+| **Gradiente** | `LinearGradient` topLeft → bottomRight: topo ~14% mix com branco; base = cor normalizada. |
+| **Ícone**     | Círculo 40px, fundo branco α 18%, ícone branco α 95%. Chaves em `kGroupIconChoices` / `groupIconFromKey` (`lib/ui/theme/group_icon.dart`): `group`, `work`, `home`, `cottage`, `grocery`, `fitness_center`, `school`, `flight_takeoff`, `pets`, `restaurant`, `music_note`, `attach_money`; desconhecido → `groups_rounded`. |
+| **Tipografia**| Nome: branco w800 ~15px, até 2 linhas. Estatísticas: branco α 72%, 12px, w600. |
+| **Progresso** | Track: branco α 22%. Preenchimento: **Success Cyan** `#00F5D4`. |
+| **Sombra**    | Preta α ~7%, blur ~18px, offset Y 6px. |
+| **Raio**      | `20px` no card. |
+
+Implementação: `lib/ui/widgets/group_rail_card.dart`, `lib/ui/theme/color_utils.dart`, `lib/ui/theme/group_icon.dart`.
+
+---
+
+## 7. Aplicação sugerida (layout)
 
 ```text
 ┌──────────────────────────┐
-│ [Avatar]   [Notif Icon]  │  <-- Header limpo, fundo #F8F9FF
+│ [Avatar]   [Notif Icon]  │  Header, fundo #F8F9FF
 │                          │
-│ HELLO, OLIVIA            │  <-- Inter ExtraBold
-│ [===== 80% =====]        │  <-- Gradiente Blue -> Indigo
+│ Olá, …                   │  Título escuro #2B2D42
 │                          │
-│ [Colored Group][ Group ] │  <-- Cor do grupo + ícone; texto branco (secção 5)
+│ [Hoje][Agendadas]        │  Quadrantes pastel (secção 1)
+│ [Todas][Atrasadas]       │
 │                          │
-│ [ Task list / Inbox... ] │
+│ [Grupo A][ Grupo B ]     │  Cor sólida do grupo + ícone; texto branco (secção 5)
+│                          │
+│ [ Lista de tarefas… ]    │
 └──────────────────────────┘
 ```

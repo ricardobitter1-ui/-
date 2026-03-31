@@ -4,6 +4,9 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../constants/group_color_presets.dart';
 import '../models/task_model.dart';
 import '../models/tag_model.dart';
 import '../models/group_model.dart';
@@ -430,6 +433,32 @@ class FirebaseService {
       'icon': group.icon,
       'color': group.color,
     });
+  }
+
+  /// Uma vez por instalação: substitui cores legadas do picker v1 pelos presets pastel (v2)
+  /// nos grupos em que o utilizador atual é admin.
+  Future<void> migrateLegacyGroupColorsIfNeeded() async {
+    if (uid == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(kGroupColorMigrationV2PrefsKey) == true) return;
+    try {
+      final snap =
+          await _groupsCollection.where('members', arrayContains: uid).get();
+      for (final doc in snap.docs) {
+        final g = GroupModel.fromMap(
+          doc.id,
+          doc.data() as Map<String, dynamic>,
+        );
+        if (!g.isAdmin(uid)) continue;
+        final norm = normalizeGroupColorHexForLookup(g.color);
+        final replacement = mapLegacyGroupColorToPreset(norm);
+        if (replacement == null) continue;
+        await updateGroup(g.copyWith(color: replacement));
+      }
+      await prefs.setBool(kGroupColorMigrationV2PrefsKey, true);
+    } catch (_) {
+      // Não marcar concluído — tenta noutro arranque.
+    }
   }
 
   Future<void> deleteGroup(String groupId) async {
