@@ -86,9 +86,72 @@ service cloud.firestore {
         || task.assigneeIds.size() == 0;
     }
 
+    // Perfil público em users/{uid} — apenas campos não sensíveis (design: firestore-user-profiles).
+    function userPublicProfileValid(data) {
+      return data is map
+        && data.keys().hasOnly(['displayName', 'photoUrl', 'updatedAt'])
+        && data.displayName is string
+        && data.displayName.size() <= 200
+        && data.updatedAt is timestamp
+        && (
+          !('photoUrl' in data)
+          || (data.photoUrl is string && data.photoUrl.size() <= 2000)
+        );
+    }
+
     function taskIsPersonal(task) {
       return !('groupId' in task)
         || task.groupId == null;
+    }
+
+    function groupTagDocValid(data) {
+      return data is map
+        && data.keys().hasOnly(['name', 'color'])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.color is int;
+    }
+
+    function taskTagIdsEmpty(task) {
+      return !('tagIds' in task)
+        || task.tagIds == null
+        || task.tagIds.size() == 0;
+    }
+
+    function tagIdRefOk(gid, tid) {
+      return tid is string
+        && tid.size() > 0
+        && exists(/databases/$(database)/documents/groups/$(gid)/tags/$(tid));
+    }
+
+    // Até 10 tags por tarefa (sem loops dinâmicos nas rules)
+    function tagIdsOkForGroupTask(gid, tids) {
+      return tids is list
+        && tids.size() <= 10
+        && (tids.size() < 1 || tagIdRefOk(gid, tids[0]))
+        && (tids.size() < 2 || tagIdRefOk(gid, tids[1]))
+        && (tids.size() < 3 || tagIdRefOk(gid, tids[2]))
+        && (tids.size() < 4 || tagIdRefOk(gid, tids[3]))
+        && (tids.size() < 5 || tagIdRefOk(gid, tids[4]))
+        && (tids.size() < 6 || tagIdRefOk(gid, tids[5]))
+        && (tids.size() < 7 || tagIdRefOk(gid, tids[6]))
+        && (tids.size() < 8 || tagIdRefOk(gid, tids[7]))
+        && (tids.size() < 9 || tagIdRefOk(gid, tids[8]))
+        && (tids.size() < 10 || tagIdRefOk(gid, tids[9]));
+    }
+
+    function taskTagIdsValid(task) {
+      return taskIsPersonal(task)
+        ? taskTagIdsEmpty(task)
+        : (
+            task.groupId is string
+            && task.groupId.size() > 0
+            && (
+              taskTagIdsEmpty(task)
+              || tagIdsOkForGroupTask(task.groupId, task.tagIds)
+            )
+          );
     }
 
     function metadataOnlyGroupUpdate() {
@@ -145,6 +208,18 @@ service cloud.firestore {
       allow delete: if signedIn()
         && resource.data.get('isPersonal', false) != true
         && isGroupAdmin(groupId);
+
+      match /tags/{tagId} {
+        allow read: if isGroupMember(groupId);
+
+        allow create: if isGroupMember(groupId)
+          && groupTagDocValid(request.resource.data);
+
+        allow update: if isGroupMember(groupId)
+          && groupTagDocValid(request.resource.data);
+
+        allow delete: if isGroupMember(groupId);
+      }
     }
 
     match /groupInvites/{inviteId} {
@@ -254,6 +329,7 @@ service cloud.firestore {
           taskIsPersonal(request.resource.data)
           && request.resource.data.ownerId == request.auth.uid
           && emptyAssignees(request.resource.data)
+          && taskTagIdsValid(request.resource.data)
         )
         || (
           request.resource.data.groupId != null
@@ -261,6 +337,7 @@ service cloud.firestore {
           && request.resource.data.ownerId == request.auth.uid
           && request.resource.data.createdBy == request.auth.uid
           && assigneesOkForGroup(request.resource.data.groupId, request.resource.data)
+          && taskTagIdsValid(request.resource.data)
         )
       );
 
@@ -271,6 +348,7 @@ service cloud.firestore {
           && taskIsPersonal(request.resource.data)
           && request.resource.data.ownerId == request.auth.uid
           && emptyAssignees(request.resource.data)
+          && taskTagIdsValid(request.resource.data)
         )
         || (
           request.resource.data.groupId != null
@@ -279,6 +357,7 @@ service cloud.firestore {
           && request.resource.data.ownerId == resource.data.ownerId
           && request.resource.data.createdBy == resource.data.createdBy
           && assigneesOkForGroup(request.resource.data.groupId, request.resource.data)
+          && taskTagIdsValid(request.resource.data)
         )
       );
 
@@ -286,6 +365,13 @@ service cloud.firestore {
         (taskIsPersonal(resource.data) && resource.data.ownerId == request.auth.uid)
         || (resource.data.groupId != null && isGroupMember(resource.data.groupId))
       );
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.auth.uid == userId
+        && userPublicProfileValid(request.resource.data);
     }
 
     match /users/{userId}/fcmTokens/{tokenId} {

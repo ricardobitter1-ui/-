@@ -1,11 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../business_logic/providers/task_provider.dart';
+import '../../business_logic/providers/user_public_profile_provider.dart';
+import '../../data/models/tag_model.dart';
+import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
+import 'custom_avatar.dart';
 import '../../data/services/location_service.dart';
 import '../../data/services/notification_service.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/task_model.dart';
 import '../theme/app_theme.dart';
+
+const _kPresetTagColors = <int>[
+  0xFFE53935,
+  0xFFD81B60,
+  0xFF8E24AA,
+  0xFF5E35B1,
+  0xFF3949AB,
+  0xFF1E88E5,
+  0xFF00897B,
+  0xFF43A047,
+  0xFFFDD835,
+  0xFFF4511E,
+  0xFF6D4C41,
+  0xFF546E7A,
+];
 
 class TaskFormModal extends ConsumerStatefulWidget {
   final TaskModel? initialTask;
@@ -33,10 +53,13 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   TimeOfDay? _selectedTime;
 
   String _locationTrigger = 'arrival';
-  bool _attachLocation = false;
 
   bool _isLoading = false;
   final Set<String> _selectedAssigneeIds = {};
+  final Set<String> _selectedTagIds = {};
+  bool _loadingSuggestions = false;
+  bool _suggestionsFetched = false;
+  List<TagModel> _suggestionTags = [];
 
   bool get _isEditing => widget.initialTask != null;
 
@@ -44,6 +67,17 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       widget.collaborationGroup != null &&
       widget.forcedGroupId != null &&
       widget.forcedGroupId == widget.collaborationGroup!.id;
+
+  /// Grupo para etiquetas: formulário de grupo ou tarefa de grupo editada a partir da Home.
+  String? get _effectiveGroupId {
+    final f = widget.forcedGroupId?.trim();
+    if (f != null && f.isNotEmpty) return f;
+    final g = widget.initialTask?.groupId?.trim();
+    if (g != null && g.isNotEmpty) return g;
+    return null;
+  }
+
+  bool get _showTagSelector => _effectiveGroupId != null;
 
   @override
   void initState() {
@@ -54,6 +88,9 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     if (task?.assigneeIds.isNotEmpty ?? false) {
       _selectedAssigneeIds.addAll(task!.assigneeIds);
     }
+    if (task?.tagIds.isNotEmpty ?? false) {
+      _selectedTagIds.addAll(task!.tagIds);
+    }
 
     if (task != null) {
       _reminderType = task.reminderType ?? 'none';
@@ -62,7 +99,6 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         _selectedTime = TimeOfDay.fromDateTime(task.dueDate!);
       }
       _locationTrigger = task.locationTrigger ?? 'arrival';
-      _attachLocation = task.latitude != null;
     }
   }
 
@@ -92,20 +128,27 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         );
       }
 
-      double? lat = widget.initialTask?.latitude;
-      double? lng = widget.initialTask?.longitude;
+      List<String> tagIdsForSave;
+      if (_showTagSelector) {
+        // Seleção direta; as rules do Firestore validam ids (evita corrida com o stream).
+        tagIdsForSave = _selectedTagIds.toList();
+      } else {
+        tagIdsForSave = widget.initialTask?.tagIds ?? const [];
+      }
 
-      if (_reminderType == 'location' || (_attachLocation && lat == null)) {
+      double? lat;
+      double? lng;
+      if (_reminderType == 'location') {
         final position = await ref
             .read(locationServiceProvider)
             .getCurrentLocation();
         if (position != null) {
           lat = position.latitude;
           lng = position.longitude;
+        } else {
+          lat = widget.initialTask?.latitude;
+          lng = widget.initialTask?.longitude;
         }
-      } else if (!_attachLocation && _reminderType != 'location') {
-        lat = null;
-        lng = null;
       }
 
       final task = TaskModel(
@@ -124,6 +167,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         assigneeIds: _showAssignees
             ? _selectedAssigneeIds.toList()
             : (widget.initialTask?.assigneeIds ?? const []),
+        tagIds: tagIdsForSave,
       );
 
       // Gerenciar Notificação Local
@@ -213,8 +257,212 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     });
   }
 
+  Future<void> _loadSuggestions(String currentGroupId) async {
+    setState(() => _loadingSuggestions = true);
+    try {
+      final list = await ref
+          .read(firebaseServiceProvider)
+          .fetchSuggestionTagsExcludingGroup(currentGroupId);
+      if (mounted) {
+        setState(() {
+          _suggestionTags = list;
+          _loadingSuggestions = false;
+          _suggestionsFetched = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loadingSuggestions = false;
+          _suggestionsFetched = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _importSuggestion(String gid, TagModel suggestion) async {
+    try {
+      final id = await ref.read(firebaseServiceProvider).addGroupTag(
+            groupId: gid,
+            name: suggestion.name,
+            color: suggestion.color,
+          );
+      if (mounted) {
+        setState(() => _selectedTagIds.add(id));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showNewTagDialog(String groupId) async {
+    final result = await showDialog<({String name, int color})>(
+      context: context,
+      builder: (ctx) => const _NewGroupTagDialogContent(),
+    );
+    if (result == null || !mounted) return;
+    try {
+      final id = await ref.read(firebaseServiceProvider).addGroupTag(
+            groupId: groupId,
+            name: result.name,
+            color: result.color,
+          );
+      setState(() => _selectedTagIds.add(id));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildTagSelectorSection(BuildContext context) {
+    final gid = _effectiveGroupId!;
+    final theme = Theme.of(context);
+    return ref.watch(groupTagsStreamProvider(gid)).when(
+          loading: () => const LinearProgressIndicator(),
+          error: (e, _) => Text(
+            'Etiquetas: $e',
+            style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+          ),
+          data: (tags) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Etiquetas',
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Opcional. Toque para marcar; até 10 por tarefa.',
+                style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ...tags.map((tag) {
+                    final sel = _selectedTagIds.contains(tag.id);
+                    return FilterChip(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: Color(tag.color),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(tag.name),
+                        ],
+                      ),
+                      selected: sel,
+                      onSelected: (v) {
+                        setState(() {
+                          if (v) {
+                            if (_selectedTagIds.length >= 10) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Máximo de 10 etiquetas.'),
+                                ),
+                              );
+                              return;
+                            }
+                            _selectedTagIds.add(tag.id);
+                          } else {
+                            _selectedTagIds.remove(tag.id);
+                          }
+                        });
+                      },
+                    );
+                  }),
+                  ActionChip(
+                    avatar: const Icon(Icons.add, size: 18),
+                    label: const Text('Nova etiqueta'),
+                    onPressed: () => _showNewTagDialog(gid),
+                  ),
+                ],
+              ),
+              Theme(
+                data: theme.copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: const Text('Sugestões de outros grupos'),
+                  onExpansionChanged: (exp) {
+                    if (exp && !_suggestionsFetched && !_loadingSuggestions) {
+                      _loadSuggestions(gid);
+                    }
+                  },
+                  children: [
+                    if (_loadingSuggestions)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      )
+                    else if (!_suggestionsFetched)
+                      const SizedBox.shrink()
+                    else if (_suggestionTags.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'Nenhuma etiqueta noutros grupos.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.grey,
+                          ),
+                        ),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _suggestionTags.map((st) {
+                            return ActionChip(
+                              avatar: CircleAvatar(
+                                backgroundColor: Color(st.color),
+                                radius: 10,
+                              ),
+                              label: Text(st.name),
+                              onPressed: () => _importSuggestion(gid, st),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final profilesAsync = _showAssignees
+        ? ref.watch(
+            groupMemberProfilesProvider(
+              memberUidsCacheKey(widget.collaborationGroup!.members),
+            ),
+          )
+        : null;
+    final me = ref.watch(authStateProvider).value;
+
     return Padding(
       padding: EdgeInsets.only(
         top: 24,
@@ -257,6 +505,10 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
               maxLines: 2,
               textCapitalization: TextCapitalization.sentences,
             ),
+            if (_showTagSelector) ...[
+              const SizedBox(height: 20),
+              _buildTagSelectorSection(context),
+            ],
             const SizedBox(height: 20),
 
             Text(
@@ -264,44 +516,13 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 12),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(
-                  value: 'none',
-                  label: Text('Sem Alarme'),
-                  icon: Icon(Icons.alarm_off),
-                ),
-                ButtonSegment(
-                  value: 'datetime',
-                  label: Text('Data/Hora'),
-                  icon: Icon(Icons.calendar_today),
-                ),
-                ButtonSegment(
-                  value: 'location',
-                  label: Text('Localização'),
-                  icon: Icon(Icons.place),
-                ),
-              ],
-              selected: {_reminderType},
-              onSelectionChanged: (Set<String> newSelection) {
-                setState(() => _reminderType = newSelection.first);
-              },
-              style: SegmentedButton.styleFrom(
-                selectedBackgroundColor: AppTheme.primaryBlue.withOpacity(0.1),
-                selectedForegroundColor: AppTheme.primaryBlue,
-              ),
-            ),
+            _buildReminderTypeSelector(context),
 
             const SizedBox(height: 16),
             if (_reminderType == 'datetime') _buildDateTimeUI(),
             if (_reminderType == 'location') _buildLocationUI(),
 
-            if (_reminderType != 'location') ...[
-              const SizedBox(height: 8),
-              _buildSimpleLocationAttach(),
-            ],
-
-            if (_showAssignees) ...[
+            if (_showAssignees && profilesAsync != null) ...[
               const SizedBox(height: 20),
               Text(
                 'Responsáveis',
@@ -315,25 +536,52 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                     ),
               ),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: widget.collaborationGroup!.members.map((mid) {
-                  final selected = _selectedAssigneeIds.contains(mid);
-                  return FilterChip(
-                    label: Text(_assigneeShortLabel(mid)),
-                    selected: selected,
-                    onSelected: (v) {
-                      setState(() {
-                        if (v) {
-                          _selectedAssigneeIds.add(mid);
-                        } else {
-                          _selectedAssigneeIds.remove(mid);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
+              profilesAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+                error: (e, _) => Text(
+                  'Erro ao carregar nomes: $e',
+                  style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                ),
+                data: (profileMap) => Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.collaborationGroup!.members.map((mid) {
+                    final selected = _selectedAssigneeIds.contains(mid);
+                    final label = memberDisplayLabel(mid, profileMap);
+                    return FilterChip(
+                      avatar: CustomAvatar(
+                        photoUrl: memberPhotoUrl(
+                          mid,
+                          profileMap,
+                          selfUid: me?.uid,
+                          selfPhotoUrl: me?.photoURL,
+                        ),
+                        displayName: label,
+                        radius: 14,
+                      ),
+                      label: Text(label),
+                      selected: selected,
+                      onSelected: (v) {
+                        setState(() {
+                          if (v) {
+                            _selectedAssigneeIds.add(mid);
+                          } else {
+                            _selectedAssigneeIds.remove(mid);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
               ),
             ],
 
@@ -361,6 +609,94 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     );
   }
 
+  Widget _buildReminderTypeSelector(BuildContext context) {
+    final theme = Theme.of(context);
+    Widget tile({
+      required String value,
+      required String label,
+      required IconData icon,
+    }) {
+      final selected = _reminderType == value;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Material(
+          color: selected
+              ? AppTheme.primaryBlue.withValues(alpha: 0.1)
+              : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: () => setState(() => _reminderType = value),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: selected
+                      ? AppTheme.primaryBlue
+                      : theme.colorScheme.outline.withValues(alpha: 0.28),
+                  width: selected ? 2 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    icon,
+                    color: selected
+                        ? AppTheme.primaryBlue
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: selected
+                            ? AppTheme.primaryBlue
+                            : theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  if (selected)
+                    const Icon(
+                      Icons.check_circle,
+                      color: AppTheme.primaryBlue,
+                      size: 22,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        tile(
+          value: 'none',
+          label: 'Sem alarme',
+          icon: Icons.alarm_off_outlined,
+        ),
+        tile(
+          value: 'datetime',
+          label: 'Data e hora',
+          icon: Icons.calendar_today_outlined,
+        ),
+        tile(
+          value: 'location',
+          label: 'Localização',
+          icon: Icons.place_outlined,
+        ),
+      ],
+    );
+  }
+
   Widget _buildDateTimeUI() {
     String dateText = 'Tocar para Escolher';
     if (_selectedDate != null && _selectedTime != null) {
@@ -371,7 +707,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.primaryBlue.withOpacity(0.05),
+        color: AppTheme.primaryBlue.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(24),
       ),
       child: Row(
@@ -397,7 +733,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.primaryBlue.withOpacity(0.05),
+        color: AppTheme.primaryBlue.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
@@ -439,24 +775,88 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       ),
     );
   }
+}
 
-  String _assigneeShortLabel(String uid) {
-    if (uid.length <= 8) return uid;
-    return '…${uid.substring(uid.length - 6)}';
+/// Diálogo com [TextEditingController] próprio — dispose só após a rota fechar (evita IME após dispose).
+class _NewGroupTagDialogContent extends StatefulWidget {
+  const _NewGroupTagDialogContent();
+
+  @override
+  State<_NewGroupTagDialogContent> createState() =>
+      _NewGroupTagDialogContentState();
+}
+
+class _NewGroupTagDialogContentState extends State<_NewGroupTagDialogContent> {
+  late final TextEditingController _nameCtrl;
+  late int _pickedColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController();
+    _pickedColor = _kPresetTagColors.first;
   }
 
-  Widget _buildSimpleLocationAttach() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text(
-          "Anexar pino do mapa nesta tarefa?",
-          style: TextStyle(color: Colors.grey),
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Nova etiqueta'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _nameCtrl,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                hintText: 'Nome (ex.: Verduras)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _kPresetTagColors.map((c) {
+                final sel = _pickedColor == c;
+                return GestureDetector(
+                  onTap: () => setState(() => _pickedColor = c),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Color(c),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: sel ? Colors.black : Colors.transparent,
+                        width: 3,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ),
-        Switch(
-          value: _attachLocation,
-          onChanged: (val) => setState(() => _attachLocation = val),
-          activeThumbColor: AppTheme.primaryBlue,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        TextButton(
+          onPressed: () {
+            final name = _nameCtrl.text.trim();
+            if (name.isEmpty) return;
+            Navigator.pop(context, (name: name, color: _pickedColor));
+          },
+          child: const Text('Criar'),
         ),
       ],
     );

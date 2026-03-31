@@ -135,19 +135,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               ),
                             ),
                             const SizedBox(height: 32),
-                            TextFormField(
-                              controller: _emailController,
-                              style: const TextStyle(color: Colors.white),
-                              decoration: _inputDecoration('E-mail', Icons.email_outlined),
-                              validator: (v) => v!.isEmpty ? 'Obrigatório' : null,
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _passwordController,
-                              obscureText: true,
-                              style: const TextStyle(color: Colors.white),
-                              decoration: _inputDecoration('Senha', Icons.lock_outline),
-                              validator: (v) => v!.length < 6 ? 'Mínimo 6 chars' : null,
+                            AutofillGroup(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextFormField(
+                                    controller: _emailController,
+                                    style: const TextStyle(color: Colors.white),
+                                    keyboardType: TextInputType.emailAddress,
+                                    textCapitalization: TextCapitalization.none,
+                                    autocorrect: false,
+                                    enableSuggestions: false,
+                                    autofillHints: const [AutofillHints.email],
+                                    textInputAction: TextInputAction.next,
+                                    decoration: _inputDecoration(
+                                      'E-mail',
+                                      Icons.email_outlined,
+                                    ),
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Obrigatório' : null,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextFormField(
+                                    controller: _passwordController,
+                                    obscureText: true,
+                                    style: const TextStyle(color: Colors.white),
+                                    autofillHints: const [AutofillHints.password],
+                                    textInputAction: TextInputAction.done,
+                                    onFieldSubmitted: (_) => _handleAuth(),
+                                    decoration: _inputDecoration(
+                                      'Senha',
+                                      Icons.lock_outline,
+                                    ),
+                                    validator: (v) =>
+                                        v!.length < 6 ? 'Mínimo 6 chars' : null,
+                                  ),
+                                ],
+                              ),
                             ),
                             const SizedBox(height: 24),
                             _isLoading

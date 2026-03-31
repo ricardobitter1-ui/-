@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/models/task_model.dart';
+import '../../data/models/tag_model.dart';
 
 // ─── Provider original (mantido para compatibilidade — HomeScreen atual) ───────
 
@@ -44,5 +45,12 @@ final groupTasksStreamProvider =
   return ref.watch(tasksStreamProvider).whenData(
         (tasks) => tasks.where((t) => t.groupId == gid).toList(),
       );
+});
+
+/// Etiquetas do grupo (`groups/{groupId}/tags/`).
+final groupTagsStreamProvider =
+    StreamProvider.family<List<TagModel>, String>((ref, groupId) {
+  final fs = ref.watch(firebaseServiceProvider);
+  return fs.streamGroupTags(groupId);
 });
 

@@ -4,6 +4,7 @@
 
 - Regras: `firestore.rules` (raiz do repositório).
 - Índices: `firestore.indexes.json`.
+- **Tags de grupo:** subcoleção `groups/{groupId}/tags/{tagId}` (`name`, `color`); tarefas de grupo podem ter `tagIds` (máx. 10), validados contra essa subcoleção. Deploy das rules necessário após alterações.
 
 ### Deploy (staging / produção)
 

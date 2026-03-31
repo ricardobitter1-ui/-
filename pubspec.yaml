@@ -49,6 +49,7 @@ dependencies:
   easy_date_timeline: ^2.0.9
   flutter_svg: ^2.0.10+1
   app_links: ^6.4.0
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:

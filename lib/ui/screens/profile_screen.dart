@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,11 +7,78 @@ import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
 import '../widgets/custom_avatar.dart';
 
-class ProfileScreen extends ConsumerWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  Future<void> _editDisplayName() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final ctrl = TextEditingController(
+      text: user.displayName?.trim() ?? '',
+    );
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nome a mostrar'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            hintText: 'Como quer aparecer nos grupos',
+          ),
+          textCapitalization: TextCapitalization.words,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) {
+      ctrl.dispose();
+      return;
+    }
+
+    final name = ctrl.text.trim();
+    ctrl.dispose();
+
+    try {
+      await user.updateDisplayName(name.isEmpty ? null : name);
+      await user.reload();
+      await ref.read(firebaseServiceProvider).upsertCurrentUserProfile();
+      ref.invalidate(authStateProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nome atualizado.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).value;
     final displayName = user?.displayName ?? user?.email ?? 'Usuário';
     final photoUrl = user?.photoURL;
@@ -52,6 +120,12 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _editDisplayName,
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('Alterar nome a mostrar'),
           ),
           const SizedBox(height: 24),
           if (!hasEmail)
@@ -184,4 +258,3 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 }
-

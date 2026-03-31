@@ -4,14 +4,21 @@ import 'package:easy_date_timeline/easy_date_timeline.dart';
 import '../../business_logic/group_day_progress.dart';
 import '../../business_logic/providers/group_provider.dart';
 import '../../business_logic/providers/task_provider.dart';
+import '../../business_logic/task_list_partition.dart';
+import '../../data/local/completed_section_prefs.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/task_model.dart';
+import '../../data/models/tag_model.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/completed_tasks_section_header.dart';
 import '../widgets/daily_progress_indicator.dart';
 import '../widgets/group_rail_card.dart';
+import '../widgets/home_completed_tag_filter_bar.dart';
+import '../widgets/home_task_card_with_tags.dart';
+import '../widgets/task_appear_motion.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_form_modal.dart';
 import 'group_detail_screen.dart';
@@ -25,13 +32,83 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   DateTime _selectedDate = DateTime.now();
+  bool _inboxCompletedExpanded = true;
+  bool _dayCompletedExpanded = true;
+  String? _inboxCompletedTagFilter;
+  String? _dayCompletedTagFilter;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkPermissions();
+      _loadCompletedSectionExpansionPrefs();
     });
+  }
+
+  Future<void> _loadCompletedSectionExpansionPrefs() async {
+    final inbox = await loadCompletedSectionExpanded(
+      CompletedSectionPrefsKeys.hojeInboxSemData,
+    );
+    final day = await loadCompletedSectionExpanded(
+      CompletedSectionPrefsKeys.hojeDiaSelecionado,
+    );
+    if (!mounted) return;
+    setState(() {
+      _inboxCompletedExpanded = inbox;
+      _dayCompletedExpanded = day;
+    });
+  }
+
+  List<HomeTagFilterOption> _homeCompletedFilterOptions(
+    List<TaskModel> completed,
+  ) {
+    final groupIds =
+        completed.map((t) => t.groupId).whereType<String>().toSet();
+    final seen = <String>{};
+    final out = <HomeTagFilterOption>[];
+    for (final gid in groupIds) {
+      final tags =
+          ref.watch(groupTagsStreamProvider(gid)).value ?? const <TagModel>[];
+      final byId = {for (final t in tags) t.id: t};
+      for (final task in completed) {
+        if (task.groupId != gid) continue;
+        for (final tid in task.tagIds) {
+          final tag = byId[tid];
+          if (tag == null) continue;
+          final key = HomeTaskCardWithTags.compositeTagKey(gid, tid);
+          if (seen.add(key)) {
+            out.add(HomeTagFilterOption(compositeKey: key, tag: tag));
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  String? _effectiveHomeTagFilter(
+    List<HomeTagFilterOption> options,
+    String? stored,
+  ) {
+    if (stored == null) return null;
+    return options.any((o) => o.compositeKey == stored) ? stored : null;
+  }
+
+  List<TaskModel> _filterHomeCompletedByTag(
+    List<TaskModel> completed,
+    String? compositeKey,
+  ) {
+    if (compositeKey == null) return completed;
+    return completed.where((t) {
+      final gid = t.groupId;
+      if (gid == null) return false;
+      for (final tid in t.tagIds) {
+        if (HomeTaskCardWithTags.compositeTagKey(gid, tid) == compositeKey) {
+          return true;
+        }
+      }
+      return false;
+    }).toList();
   }
 
   Future<void> _checkPermissions() async {
@@ -121,6 +198,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Future<void> _confirmAndDeleteTask(TaskModel task) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Apagar tarefa?'),
+        content: Text(
+          'A tarefa "${task.title}" será removida. Pode tocar em Desfazer na mensagem que aparece em seguida.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: const Text('Apagar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _deleteTask(task);
+  }
+
   Future<void> _deleteTask(TaskModel task) async {
     final fs = ref.read(firebaseServiceProvider);
     final ns = ref.read(notificationServiceProvider);
@@ -148,6 +250,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF2B2D42),
+          duration: const Duration(seconds: 5),
         ),
       );
     }
@@ -373,29 +476,132 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ];
     }
 
-    return [
+    final (:active, :completed) = partitionTasksByCompletion(inboxTasks);
+    final prefsKey = CompletedSectionPrefsKeys.hojeInboxSemData;
+    final slivers = <Widget>[
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(24, 0, 80, 0),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          0,
+          24,
+          completed.isNotEmpty ? 0 : 80,
+        ),
         sliver: SliverList(
           delegate: SliverChildBuilderDelegate(
             (context, index) {
-              final task = inboxTasks[index];
-              return TaskCard(
-                task: task,
-                onToggle: () {
-                  ref
-                      .read(firebaseServiceProvider)
-                      .toggleTaskCompletion(task.id, task.isCompleted);
-                },
-                onEdit: () => _openTaskForm(task: task),
-                onDelete: () => _deleteTask(task),
+              final task = active[index];
+              return TaskAppearMotion(
+                key: ValueKey('inbox-a-${task.id}'),
+                child: TaskCard(
+                  task: task,
+                  onToggle: () {
+                    ref
+                        .read(firebaseServiceProvider)
+                        .toggleTaskCompletion(task.id, task.isCompleted);
+                  },
+                  onEdit: () => _openTaskForm(task: task),
+                  onDelete: () => _confirmAndDeleteTask(task),
+                ),
               );
             },
-            childCount: inboxTasks.length,
+            childCount: active.length,
           ),
         ),
       ),
     ];
+
+    if (completed.isNotEmpty) {
+      final inboxFilterOpts = _homeCompletedFilterOptions(completed);
+      final inboxEff =
+          _effectiveHomeTagFilter(inboxFilterOpts, _inboxCompletedTagFilter);
+      final inboxCompletedVisible =
+          _filterHomeCompletedByTag(completed, inboxEff);
+
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+            child: CompletedTasksSectionHeader(
+              expanded: _inboxCompletedExpanded,
+              count: inboxCompletedVisible.length,
+              onToggle: () async {
+                final next = !_inboxCompletedExpanded;
+                setState(() => _inboxCompletedExpanded = next);
+                await saveCompletedSectionExpanded(prefsKey, next);
+              },
+            ),
+          ),
+        ),
+      );
+      if (_inboxCompletedExpanded) {
+        if (inboxFilterOpts.isNotEmpty) {
+          slivers.add(
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+                child: HomeCompletedSectionTagFilterBar(
+                  options: inboxFilterOpts,
+                  selectedCompositeKey: inboxEff,
+                  onSelect: (k) {
+                    setState(() => _inboxCompletedTagFilter = k);
+                  },
+                ),
+              ),
+            ),
+          );
+        }
+        if (inboxCompletedVisible.isEmpty) {
+          slivers.add(
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 80, 0),
+                child: Text(
+                  'Nenhuma tarefa concluída com esta etiqueta.',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                ),
+              ),
+            ),
+          );
+        } else {
+          slivers.add(
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 80, 0),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final task = inboxCompletedVisible[index];
+                    return TaskAppearMotion(
+                      key: ValueKey('inbox-c-${task.id}'),
+                      child: HomeTaskCardWithTags(
+                        task: task,
+                        showTagChips: true,
+                        onToggle: () {
+                          ref
+                              .read(firebaseServiceProvider)
+                              .toggleTaskCompletion(
+                                task.id,
+                                task.isCompleted,
+                              );
+                        },
+                        onEdit: () => _openTaskForm(task: task),
+                        onDelete: () => _confirmAndDeleteTask(task),
+                      ),
+                    );
+                  },
+                  childCount: inboxCompletedVisible.length,
+                ),
+              ),
+            ),
+          );
+        }
+      } else {
+        slivers.add(
+          const SliverToBoxAdapter(child: SizedBox(height: 80)),
+        );
+      }
+    }
+
+    return slivers;
   }
 
   List<Widget> _buildDayTaskSlivers(List<TaskModel> tasks) {
@@ -410,29 +616,132 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ];
     }
 
-    return [
+    final (:active, :completed) = partitionTasksByCompletion(tasks);
+    final prefsKey = CompletedSectionPrefsKeys.hojeDiaSelecionado;
+    final slivers = <Widget>[
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 48),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          0,
+          24,
+          completed.isNotEmpty ? 0 : 48,
+        ),
         sliver: SliverList(
           delegate: SliverChildBuilderDelegate(
             (context, index) {
-              final task = tasks[index];
-              return TaskCard(
-                task: task,
-                onToggle: () {
-                  ref
-                      .read(firebaseServiceProvider)
-                      .toggleTaskCompletion(task.id, task.isCompleted);
-                },
-                onEdit: () => _openTaskForm(task: task),
-                onDelete: () => _deleteTask(task),
+              final task = active[index];
+              return TaskAppearMotion(
+                key: ValueKey('day-a-${task.id}'),
+                child: TaskCard(
+                  task: task,
+                  onToggle: () {
+                    ref
+                        .read(firebaseServiceProvider)
+                        .toggleTaskCompletion(task.id, task.isCompleted);
+                  },
+                  onEdit: () => _openTaskForm(task: task),
+                  onDelete: () => _confirmAndDeleteTask(task),
+                ),
               );
             },
-            childCount: tasks.length,
+            childCount: active.length,
           ),
         ),
       ),
     ];
+
+    if (completed.isNotEmpty) {
+      final dayFilterOpts = _homeCompletedFilterOptions(completed);
+      final dayEff =
+          _effectiveHomeTagFilter(dayFilterOpts, _dayCompletedTagFilter);
+      final dayCompletedVisible =
+          _filterHomeCompletedByTag(completed, dayEff);
+
+      slivers.add(
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+            child: CompletedTasksSectionHeader(
+              expanded: _dayCompletedExpanded,
+              count: dayCompletedVisible.length,
+              onToggle: () async {
+                final next = !_dayCompletedExpanded;
+                setState(() => _dayCompletedExpanded = next);
+                await saveCompletedSectionExpanded(prefsKey, next);
+              },
+            ),
+          ),
+        ),
+      );
+      if (_dayCompletedExpanded) {
+        if (dayFilterOpts.isNotEmpty) {
+          slivers.add(
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+                child: HomeCompletedSectionTagFilterBar(
+                  options: dayFilterOpts,
+                  selectedCompositeKey: dayEff,
+                  onSelect: (k) {
+                    setState(() => _dayCompletedTagFilter = k);
+                  },
+                ),
+              ),
+            ),
+          );
+        }
+        if (dayCompletedVisible.isEmpty) {
+          slivers.add(
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 48),
+                child: Text(
+                  'Nenhuma tarefa concluída com esta etiqueta.',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                ),
+              ),
+            ),
+          );
+        } else {
+          slivers.add(
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 48),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final task = dayCompletedVisible[index];
+                    return TaskAppearMotion(
+                      key: ValueKey('day-c-${task.id}'),
+                      child: HomeTaskCardWithTags(
+                        task: task,
+                        showTagChips: true,
+                        onToggle: () {
+                          ref
+                              .read(firebaseServiceProvider)
+                              .toggleTaskCompletion(
+                                task.id,
+                                task.isCompleted,
+                              );
+                        },
+                        onEdit: () => _openTaskForm(task: task),
+                        onDelete: () => _confirmAndDeleteTask(task),
+                      ),
+                    );
+                  },
+                  childCount: dayCompletedVisible.length,
+                ),
+              ),
+            ),
+          );
+        }
+      } else {
+        slivers.add(
+          const SliverToBoxAdapter(child: SizedBox(height: 48)),
+        );
+      }
+    }
+
+    return slivers;
   }
 
   Widget _buildCalendar() {

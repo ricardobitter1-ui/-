@@ -54,7 +54,7 @@ Como Product Manager Sênior, este roadmap foca na criação de uma plataforma d
 
 ### Fase 4 — Continuação (produto prioritário)
 
-*Change Spark: `openspec/changes/group-invite-link-email/` (Firestore + cliente; sem Functions).*
+*Change Spark (arquivada): `openspec/changes/archive/2026-03-30-group-invite-link-email/` (Firestore + cliente; sem Functions).*
 
 - **[x] Link partilhável (URL):** Link com token `exmtodo://invite?…`, `app_links`, modal Aceitar/Recusar (`group-invite-link-email`). App Links HTTPS ficam como melhoria futura.
 - **[x] Convite por e-mail (Spark):** UI por e-mail, `inviteeEmailLower`, modal ao abrir/retomar + inbox no perfil. **Pendente só com Blaze + Functions:** push/e-mail no servidor ao criar convite.
@@ -62,15 +62,50 @@ Como Product Manager Sênior, este roadmap foca na criação de uma plataforma d
 
 ---
 
+## 🏷️ Fase 5: Tags e agrupamento de tarefas (MACRO)
+*Visão de produto acordada em discussão; **specs por capability** e changes OpenSpec ficam para etapa seguinte com agentes.*
 
+**Escopo e regras de negócio (macro)**
 
-## 📈 Fase 5: Analytics & Automação (FUTURO)
-- **[ ] Geofencing de Grupo:** Alertas por localização.
+- **Tags por grupo:** vocabulário e documentos de tag pertencem a um `groupId`; não há tag “global” compartilhada entre grupos como mesma entidade.
+- **Criação:** qualquer **membro do grupo** pode criar tag (detalhe de UI e validação na spec).
+- **Opcionalidade:** tarefa **pode não ter tag**; com várias tags na mesma tarefa, a spec deve definir como a lista agrupada se comporta (ex.: aparecer sob cada tag, ordem, bucket “sem tag”).
+- **Múltiplas tags por tarefa:** permitido; combinação com filtros e agrupamento será detalhada nas specs.
+- **Cor por tag:** sim, com **escolha livre** (paleta, color picker ou equivalente — a definir na spec de UI).
+- **Reuso “de outro grupo” (modelo A):** fluxo de produto apenas **sugere / copia o rótulo** (e opcionalmente a cor); ao aplicar no grupo atual cria-se uma **nova tag com novo id** no grupo atual — **sem** referência cruzada de documentos entre grupos.
+- **Privacidade / visibilidade:** sugestões e dados de tag só a partir de grupos em que o usuário **é membro**.
 
+**Backlog técnico implícito (para as specs)**
+
+- Modelo Firestore (ex.: coleção ou subcoleção de tags por grupo, campos em `Task` para ids de tags), **Security Rules** alinhadas a membro do grupo, migração de tarefas existentes sem tag, telas: gestão leve de tags, seletor no formulário de tarefa, lista do grupo agrupada por tag.
+
+**Entregue (change `group-task-tags`, implementação no cliente + rules)**
+
+- Subcoleção `groups/{groupId}/tags/{tagId}` com `name` e `color`; rules para membros; `tasks.tagIds` validado (máx. 10, ids existentes; tarefas pessoais sem `tagIds`).
+- `TagModel`, `TaskModel.tagIds`, `FirebaseService` (stream, CRUD de tags, `deleteGroupTag` com limpeza em batches), `groupTagsStreamProvider`.
+- `TaskFormModal`: etiquetas para tarefas de grupo (incl. edição pela Home com `groupId`), nova etiqueta com paleta, sugestões de outros grupos (cópia modelo A).
+- Detalhe do grupo: `PartitionedGroupTaskList` agrupa pendentes por etiqueta (A–Z) + **Sem etiqueta**; concluídas mantêm secção colapsável existente; menu **Gerir etiquetas** para apagar.
 
 ---
 
-## 📝 Próximos Passos (Próxima Sprint)
-1. **Implementar Update Task:** Criar a função no `FirebaseService` e a UI de edição.
-2. **Polir TaskCard:** Adicionar campos de Horário e Prioridade.
-3. **Setup Database Grupos:** Criar a estrutura para suportar múltiplos grupos por UID.
+## ✅ Fase 6: Tarefas concluídas e UX de conclusão (MACRO)
+*Complementa a Fase 5 na experiência de lista; specs detalhadas depois.*
+
+- **Hoje:** concluir risca a tarefa **no mesmo lugar**; **desejo de produto:** mover o foco para um **agrupamento dedicado** a concluídas (ex.: seção no fim, colapsável — formato exato na spec).
+- **Animação** ao marcar como concluída (transição clara para o bloco de concluídas); na implementação, respeitar **redução de movimento** do sistema quando aplicável.
+- **Combinar com tags:** manter uma **área geral de concluídas** como eixo simples; uso de **chips de tag** e **filtro por tag** para obter o equivalente a “concluídas por recorte” sem multiplicar seções por tag na UI principal (detalhe em spec).
+
+---
+
+## 📈 Fase 7: Analytics e automação (FUTURO)
+- **[ ] Geofencing de grupo:** alertas por localização.
+- **[ ] Analytics** (métricas de uso, funis — a definir).
+- **[ ] Automação** (integrações, rotinas — a definir).
+
+---
+
+## 📝 Próximos passos (para trabalho com agentes)
+1. **Fase 5:** change `openspec/changes/group-task-tags/` implementada no código; fazer **deploy** das `firestore.rules` (`firebase deploy --only firestore:rules`). Arquivar a change com `/opsx:archive` quando validado em dispositivo.
+2. **Fase 6:** abrir change para lista concluídas + animação + refinamentos com tags (filtros, etc.), conforme macro acima.
+3. **Dependências:** Fase 6 pode ser change separada da Fase 5 já entregue.
+4. Itens históricos da sprint antiga (Update Task, TaskCard, DB grupos) **arquivar ou revisar** contra o estado atual do repositório antes de priorizar junto com as novas fases.

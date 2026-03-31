@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/fcm_service.dart';
 import '../../data/services/firebase_service.dart';
+import '../../data/services/user_public_profile_sync.dart';
 import '../screens/main_shell.dart';
 import '../screens/login_screen.dart';
 import 'pending_invite_coordinator.dart';
@@ -27,11 +28,13 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
         _lastSyncedUid = uid;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           ref.read(firebaseServiceProvider).ensureCollaborationBackfill();
+          ref.read(firebaseServiceProvider).upsertCurrentUserProfile();
           ref.read(fcmServiceProvider).syncTokenForCurrentUser();
         });
       }
       if (uid == null) {
         _lastSyncedUid = null;
+        clearUserPublicProfileReadCache();
       }
     });
 

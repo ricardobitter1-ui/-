@@ -3,6 +3,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'user_public_profile_sync.dart';
+
 final authServiceProvider = Provider<AuthService>((ref) {
   return AuthService();
 });
@@ -24,6 +26,7 @@ class AuthService {
       );
       if (credential.user != null) {
         await _ensureDefaultGroup(credential.user!);
+        await upsertUserPublicProfileFromUser(credential.user!);
       }
       return credential;
     } catch (e) {
@@ -39,6 +42,7 @@ class AuthService {
       );
       if (credential.user != null) {
         await _ensureDefaultGroup(credential.user!);
+        await upsertUserPublicProfileFromUser(credential.user!);
       }
       return credential;
     } catch (e) {
@@ -61,6 +65,7 @@ class AuthService {
       final userCredential = await _auth.signInWithCredential(credential);
       if (userCredential.user != null) {
         await _ensureDefaultGroup(userCredential.user!);
+        await upsertUserPublicProfileFromUser(userCredential.user!);
       }
       return userCredential;
     } catch (e) {
@@ -69,6 +74,7 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    clearUserPublicProfileReadCache();
     await _googleSignIn.signOut();
     await _auth.signOut();
   }

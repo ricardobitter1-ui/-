@@ -21,6 +21,8 @@ class TaskModel {
   final String? createdBy;
   /// Responsáveis (subset de membros do grupo); vazio fora de grupo ou sem atribuição.
   final List<String> assigneeIds;
+  /// Etiquetas do grupo (`groups/{groupId}/tags/`); vazio fora de grupo ou sem tags.
+  final List<String> tagIds;
 
   TaskModel({
     required this.id,
@@ -36,6 +38,7 @@ class TaskModel {
     this.groupId,
     this.createdBy,
     this.assigneeIds = const [],
+    this.tagIds = const [],
   });
 
   TaskModel copyWith({
@@ -52,6 +55,7 @@ class TaskModel {
     Object? groupId = _unset,
     Object? createdBy = _unset,
     Object? assigneeIds = _unset,
+    Object? tagIds = _unset,
   }) {
     return TaskModel(
       id: id ?? this.id,
@@ -67,6 +71,7 @@ class TaskModel {
       groupId: identical(groupId, _unset) ? this.groupId : groupId as String?,
       createdBy: identical(createdBy, _unset) ? this.createdBy : createdBy as String?,
       assigneeIds: identical(assigneeIds, _unset) ? this.assigneeIds : assigneeIds as List<String>,
+      tagIds: identical(tagIds, _unset) ? this.tagIds : tagIds as List<String>,
     );
   }
 
@@ -85,6 +90,7 @@ class TaskModel {
       'groupId': groupId,
       'createdBy': createdBy,
       'assigneeIds': assigneeIds,
+      'tagIds': tagIds,
     };
   }
 }

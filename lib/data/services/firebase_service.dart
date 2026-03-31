@@ -5,9 +5,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/task_model.dart';
+import '../models/tag_model.dart';
 import '../models/group_model.dart';
 import '../models/group_invite_model.dart';
+import '../models/user_public_profile.dart';
 import 'auth_service.dart';
+import 'user_public_profile_sync.dart';
 
 // Este provider agora observa o estado de autenticação e injeta o UID no serviço
 final firebaseServiceProvider = Provider<FirebaseService>((ref) {
@@ -56,6 +59,9 @@ class FirebaseService {
       createdBy: data['createdBy'],
       assigneeIds: List<String>.from(
         data['assigneeIds'] as List<dynamic>? ?? [],
+      ),
+      tagIds: List<String>.from(
+        data['tagIds'] as List<dynamic>? ?? [],
       ),
     );
   }
@@ -222,6 +228,109 @@ class FirebaseService {
     await _tasksCollection.doc(taskId).delete();
   }
 
+  // ─── Tags por grupo (`groups/{groupId}/tags/{tagId}`) ─────────────────────────
+
+  Stream<List<TagModel>> streamGroupTags(String groupId) {
+    if (uid == null) return Stream.value([]);
+    final gid = groupId.trim();
+    if (gid.isEmpty) return Stream.value([]);
+
+    return _groupsCollection.doc(gid).collection('tags').snapshots().map((s) {
+      final list = s.docs
+          .map((d) => TagModel.fromDoc(d, groupId: gid))
+          .toList();
+      list.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+      return list;
+    });
+  }
+
+  /// Etiquetas de outros grupos do utilizador (ex.: sugestões), com dedupe por nome+cor.
+  Future<List<TagModel>> fetchSuggestionTagsExcludingGroup(
+    String currentGroupId,
+  ) async {
+    if (uid == null) return [];
+    final cur = currentGroupId.trim();
+    final groupsSnap =
+        await _groupsCollection.where('members', arrayContains: uid).get();
+    final out = <TagModel>[];
+    final seen = <String>{};
+    for (final g in groupsSnap.docs) {
+      if (g.id == cur) continue;
+      final tagSnap = await _groupsCollection.doc(g.id).collection('tags').get();
+      for (final d in tagSnap.docs) {
+        final t = TagModel.fromDoc(d, groupId: g.id);
+        final key = '${t.name.toLowerCase()}\u0000${t.color}';
+        if (seen.contains(key)) continue;
+        seen.add(key);
+        out.add(t);
+      }
+    }
+    out.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+    return out;
+  }
+
+  Future<String> addGroupTag({
+    required String groupId,
+    required String name,
+    required int color,
+  }) async {
+    if (uid == null) throw Exception('Usuário não autenticado');
+    final n = name.trim();
+    if (n.isEmpty) throw Exception('Nome da etiqueta inválido');
+    final ref = _groupsCollection.doc(groupId).collection('tags').doc();
+    await ref.set({'name': n, 'color': color});
+    return ref.id;
+  }
+
+  Future<void> updateGroupTag({
+    required String groupId,
+    required String tagId,
+    required String name,
+    required int color,
+  }) async {
+    if (uid == null) throw Exception('Usuário não autenticado');
+    await _groupsCollection
+        .doc(groupId)
+        .collection('tags')
+        .doc(tagId)
+        .update({
+      'name': name.trim(),
+      'color': color,
+    });
+  }
+
+  Future<void> deleteGroupTag(String groupId, String tagId) async {
+    if (uid == null) throw Exception('Usuário não autenticado');
+    final tasksSnap =
+        await _tasksCollection.where('groupId', isEqualTo: groupId).get();
+
+    WriteBatch batch = _firestore.batch();
+    var n = 0;
+    for (final doc in tasksSnap.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final raw = data['tagIds'] as List<dynamic>? ?? [];
+      final tids = raw.map((e) => e.toString()).toList();
+      if (!tids.contains(tagId)) continue;
+      tids.remove(tagId);
+      batch.update(doc.reference, {'tagIds': tids});
+      n++;
+      if (n >= 450) {
+        await batch.commit();
+        batch = _firestore.batch();
+        n = 0;
+      }
+    }
+    if (n > 0) {
+      await batch.commit();
+    }
+
+    await _groupsCollection.doc(groupId).collection('tags').doc(tagId).delete();
+  }
+
   Stream<List<GroupModel>> getGroupsStream() {
     if (uid == null) return Stream.value([]);
 
@@ -238,6 +347,34 @@ class FirebaseService {
               )
               .toList(),
         );
+  }
+
+  /// Cria/atualiza `users/{uid}` a partir do utilizador Auth atual.
+  Future<void> upsertCurrentUserProfile() async {
+    final u = FirebaseAuth.instance.currentUser;
+    if (u == null) return;
+    await upsertUserPublicProfileFromUser(u);
+  }
+
+  /// Lê perfil público (com cache em memória — ver [clearUserPublicProfileReadCache]).
+  Future<UserPublicProfile?> getUserPublicProfile(String targetUid) {
+    return getCachedOrFetchUserPublicProfile(_firestore, targetUid);
+  }
+
+  /// Vários perfis em paralelo (reutiliza cache por UID).
+  Future<Map<String, UserPublicProfile?>> getUserPublicProfiles(
+    Set<String> uids,
+  ) async {
+    final unique = uids.where((e) => e.isNotEmpty).toSet();
+    final entries = await Future.wait(
+      unique.map(
+        (id) async => MapEntry(
+          id,
+          await getCachedOrFetchUserPublicProfile(_firestore, id),
+        ),
+      ),
+    );
+    return Map.fromEntries(entries);
   }
 
   /// Preenche `members` / `admins` / `isPersonal` em grupos antigos (ex.: "Pessoal" sem lista).

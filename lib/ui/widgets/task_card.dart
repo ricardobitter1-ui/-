@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../data/models/tag_model.dart';
 import '../../data/models/task_model.dart';
 import '../theme/app_theme.dart';
 
@@ -7,6 +8,8 @@ class TaskCard extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  /// Etiquetas a mostrar no cartão (ex.: concluídas com tags do grupo).
+  final List<TagModel>? tagChips;
 
   const TaskCard({
     super.key,
@@ -14,6 +17,7 @@ class TaskCard extends StatelessWidget {
     required this.onToggle,
     this.onEdit,
     this.onDelete,
+    this.tagChips,
   });
 
   @override
@@ -44,7 +48,7 @@ class TaskCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildCheckbox(),
+                _buildCheckbox(context),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -85,6 +89,48 @@ class TaskCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
+                      if (tagChips != null && tagChips!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final tag in tagChips!)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Color(tag.color).withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: Color(tag.color),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      tag.name,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(tag.color),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
                       if (hasLocation || hasDate) ...[
                         const SizedBox(height: 16),
                         Wrap(
@@ -115,11 +161,19 @@ class TaskCard extends StatelessWidget {
     );
   }
 
-  Widget _buildCheckbox() {
-    return GestureDetector(
-      onTap: onToggle,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
+  Widget _buildCheckbox(BuildContext context) {
+    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    return Semantics(
+      button: true,
+      label: task.isCompleted
+          ? 'Marcar tarefa como pendente'
+          : 'Marcar tarefa como concluída',
+      child: GestureDetector(
+        onTap: onToggle,
+        child: AnimatedContainer(
+          duration: reduceMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 300),
         width: 28,
         height: 28,
         margin: const EdgeInsets.only(top: 2),
@@ -131,9 +185,10 @@ class TaskCard extends StatelessWidget {
           ),
           color: task.isCompleted ? AppTheme.primaryBlue : Colors.white,
         ),
-        child: task.isCompleted 
-          ? const Icon(Icons.check, size: 16, color: Colors.white) 
-          : null,
+        child: task.isCompleted
+            ? const Icon(Icons.check, size: 16, color: Colors.white)
+            : null,
+        ),
       ),
     );
   }
