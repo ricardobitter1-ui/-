@@ -151,6 +151,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         }
       }
 
+      // titleSearchKey é derivado do título no modelo e reforçado em addTask/updateTask.
       final task = TaskModel(
         id: widget.initialTask?.id ?? '',
         title: _titleController.text.trim(),
@@ -335,33 +336,35 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
             children: [
               Text(
                 'Etiquetas',
-                style: theme.textTheme.titleLarge,
+                style: theme.textTheme.titleMedium,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Text(
                 'Opcional. Toque para marcar; até 10 por tarefa.',
                 style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: 6,
+                runSpacing: 6,
                 children: [
                   ...tags.map((tag) {
                     final sel = _selectedTagIds.contains(tag.id);
                     return FilterChip(
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
                       label: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            width: 10,
-                            height: 10,
+                            width: 8,
+                            height: 8,
                             decoration: BoxDecoration(
                               color: Color(tag.color),
                               shape: BoxShape.circle,
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 5),
                           Text(tag.name),
                         ],
                       ),
@@ -386,7 +389,9 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                     );
                   }),
                   ActionChip(
-                    avatar: const Icon(Icons.add, size: 18),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    avatar: const Icon(Icons.add, size: 16),
                     label: const Text('Nova etiqueta'),
                     onPressed: () => _showNewTagDialog(gid),
                   ),
@@ -463,14 +468,13 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         : null;
     final me = ref.watch(authStateProvider).value;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        top: 24,
-        left: 24,
-        right: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.9,
       ),
-      child: SingleChildScrollView(
+      child: Padding(
+        padding: EdgeInsets.only(top: 20, left: 24, right: 24, bottom: bottomInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -480,7 +484,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
               children: [
                 Text(
                   _isEditing ? "Editar Tarefa" : "Nova Tarefa",
-                  style: Theme.of(context).textTheme.headlineMedium,
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
@@ -488,119 +492,131 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                hintText: 'O que você precisa fazer?',
-              ),
-              textCapitalization: TextCapitalization.sentences,
-            ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _descController,
-              decoration: const InputDecoration(
-                hintText: 'Detalhe a tarefa (opcional)',
-              ),
-              maxLines: 2,
-              textCapitalization: TextCapitalization.sentences,
-            ),
-            if (_showTagSelector) ...[
-              const SizedBox(height: 20),
-              _buildTagSelectorSection(context),
-            ],
-            const SizedBox(height: 20),
-
-            Text(
-              "Me lembre por:",
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 12),
-            _buildReminderTypeSelector(context),
-
-            const SizedBox(height: 16),
-            if (_reminderType == 'datetime') _buildDateTimeUI(),
-            if (_reminderType == 'location') _buildLocationUI(),
-
-            if (_showAssignees && profilesAsync != null) ...[
-              const SizedBox(height: 20),
-              Text(
-                'Responsáveis',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Toque para atribuir membros do grupo.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey,
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: _titleController,
+                      decoration: const InputDecoration(
+                        hintText: 'O que você precisa fazer?',
+                      ),
+                      textCapitalization: TextCapitalization.sentences,
                     ),
-              ),
-              const SizedBox(height: 8),
-              profilesAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Center(
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _descController,
+                      decoration: const InputDecoration(
+                        hintText: 'Detalhe a tarefa (opcional)',
+                      ),
+                      maxLines: 2,
+                      textCapitalization: TextCapitalization.sentences,
                     ),
+                    if (_showTagSelector) ...[
+                      const SizedBox(height: 16),
+                      _buildTagSelectorSection(context),
+                    ],
+                    const SizedBox(height: 16),
+                    Text(
+                      "Me lembre por:",
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildReminderTypeSelector(context),
+                    if (_reminderType == 'datetime') _buildDateTimeUI(),
+                    if (_reminderType == 'location') _buildLocationUI(),
+                    if (_showAssignees && profilesAsync != null) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        'Responsáveis',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Toque para atribuir membros do grupo.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      profilesAsync.when(
+                        loading: () => const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        ),
+                        error: (e, _) => Text(
+                          'Erro ao carregar nomes: $e',
+                          style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                        ),
+                        data: (profileMap) => Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: widget.collaborationGroup!.members.map((mid) {
+                            final selected = _selectedAssigneeIds.contains(mid);
+                            final label = memberDisplayLabel(mid, profileMap);
+                            return FilterChip(
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                              avatar: CustomAvatar(
+                                photoUrl: memberPhotoUrl(
+                                  mid,
+                                  profileMap,
+                                  selfUid: me?.uid,
+                                  selfPhotoUrl: me?.photoURL,
+                                ),
+                                displayName: label,
+                                radius: 12,
+                              ),
+                              label: Text(label),
+                              selected: selected,
+                              onSelected: (v) {
+                                setState(() {
+                                  if (v) {
+                                    _selectedAssigneeIds.add(mid);
+                                  } else {
+                                    _selectedAssigneeIds.remove(mid);
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 8),
+                child: SizedBox(
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _submit,
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(_isEditing ? "Salvar Alterações" : "Criar Tarefa"),
                   ),
                 ),
-                error: (e, _) => Text(
-                  'Erro ao carregar nomes: $e',
-                  style: TextStyle(color: Colors.red.shade700, fontSize: 13),
-                ),
-                data: (profileMap) => Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: widget.collaborationGroup!.members.map((mid) {
-                    final selected = _selectedAssigneeIds.contains(mid);
-                    final label = memberDisplayLabel(mid, profileMap);
-                    return FilterChip(
-                      avatar: CustomAvatar(
-                        photoUrl: memberPhotoUrl(
-                          mid,
-                          profileMap,
-                          selfUid: me?.uid,
-                          selfPhotoUrl: me?.photoURL,
-                        ),
-                        displayName: label,
-                        radius: 14,
-                      ),
-                      label: Text(label),
-                      selected: selected,
-                      onSelected: (v) {
-                        setState(() {
-                          if (v) {
-                            _selectedAssigneeIds.add(mid);
-                          } else {
-                            _selectedAssigneeIds.remove(mid);
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 24),
-
-            SizedBox(
-              height: 54,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _submit,
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 24,
-                        width: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : Text(_isEditing ? "Salvar Alterações" : "Criar Tarefa"),
               ),
             ),
           ],
@@ -618,42 +634,43 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     }) {
       final selected = _reminderType == value;
       return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: 6),
         child: Material(
           color: selected
               ? AppTheme.primaryBlue.withValues(alpha: 0.1)
               : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           child: InkWell(
             onTap: () => setState(() => _reminderType = value),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: selected
                       ? AppTheme.primaryBlue
                       : theme.colorScheme.outline.withValues(alpha: 0.28),
-                  width: selected ? 2 : 1,
+                  width: selected ? 1.5 : 1,
                 ),
               ),
               child: Row(
                 children: [
                   Icon(
                     icon,
+                    size: 20,
                     color: selected
                         ? AppTheme.primaryBlue
                         : theme.colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
+                      style: theme.textTheme.bodyLarge?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: selected
                             ? AppTheme.primaryBlue
@@ -665,7 +682,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                     const Icon(
                       Icons.check_circle,
                       color: AppTheme.primaryBlue,
-                      size: 22,
+                      size: 18,
                     ),
                 ],
               ),
@@ -705,19 +722,20 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     }
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: AppTheme.primaryBlue.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          const Icon(Icons.access_time_filled, color: AppTheme.primaryBlue),
-          const SizedBox(width: 12),
+          const Icon(Icons.access_time_filled, color: AppTheme.primaryBlue, size: 20),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               dateText,
               style: const TextStyle(
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: AppTheme.primaryBlue,
               ),
@@ -731,10 +749,10 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
 
   Widget _buildLocationUI() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: AppTheme.primaryBlue.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -742,34 +760,39 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
           const Text(
             "Disparar alerta invisível por GPS:",
             style: TextStyle(
+              fontSize: 14,
               fontWeight: FontWeight.w600,
               color: AppTheme.primaryBlue,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Row(
             children: [
               ChoiceChip(
-                label: const Text("Ao Chegar no Local"),
+                label: const Text("Ao Chegar"),
                 selected: _locationTrigger == 'arrival',
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 onSelected: (val) {
                   if (val) setState(() => _locationTrigger = 'arrival');
                 },
               ),
               const SizedBox(width: 8),
               ChoiceChip(
-                label: const Text("Ao Sair do Local"),
+                label: const Text("Ao Sair"),
                 selected: _locationTrigger == 'departure',
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 onSelected: (val) {
                   if (val) setState(() => _locationTrigger = 'departure');
                 },
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           const Text(
-            "📍 O lembrete Geográfico captura sua coordenada.",
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+            "📍 O lembrete captura sua coordenada atual.",
+            style: TextStyle(fontSize: 11, color: Colors.grey),
           ),
         ],
       ),

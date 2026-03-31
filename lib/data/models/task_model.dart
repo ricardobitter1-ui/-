@@ -1,11 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../utils/title_search_key.dart';
+
 // Sentinel para distinguir 'não passou' de 'passou null' em copyWith
 const _unset = Object();
 
 class TaskModel {
   final String id;
   final String title;
+  /// Derivado do [title] para queries (`where('titleSearchKey', ...)`); minúsculas, sem acentos.
+  final String titleSearchKey;
   final String description;
   final double? latitude;
   final double? longitude;
@@ -28,6 +32,7 @@ class TaskModel {
     required this.id,
     required this.title,
     required this.description,
+    String? resolvedSearchKey,
     this.latitude,
     this.longitude,
     this.isCompleted = false,
@@ -39,7 +44,9 @@ class TaskModel {
     this.createdBy,
     this.assigneeIds = const [],
     this.tagIds = const [],
-  });
+  }) : titleSearchKey = (resolvedSearchKey != null && resolvedSearchKey.isNotEmpty)
+            ? resolvedSearchKey
+            : normalizeTitleSearchKey(title);
 
   TaskModel copyWith({
     String? id,
@@ -57,10 +64,12 @@ class TaskModel {
     Object? assigneeIds = _unset,
     Object? tagIds = _unset,
   }) {
+    final newTitle = title ?? this.title;
     return TaskModel(
       id: id ?? this.id,
-      title: title ?? this.title,
+      title: newTitle,
       description: description ?? this.description,
+      resolvedSearchKey: normalizeTitleSearchKey(newTitle),
       latitude: identical(latitude, _unset) ? this.latitude : latitude as double?,
       longitude: identical(longitude, _unset) ? this.longitude : longitude as double?,
       isCompleted: isCompleted ?? this.isCompleted,
@@ -79,6 +88,7 @@ class TaskModel {
     return {
       'id': id,
       'title': title,
+      'titleSearchKey': titleSearchKey,
       'description': description,
       'latitude': latitude,
       'longitude': longitude,

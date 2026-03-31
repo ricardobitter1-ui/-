@@ -1,11 +1,14 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../business_logic/task_list_partition.dart';
 import '../../data/local/completed_section_prefs.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/tag_model.dart';
 import '../../data/models/task_model.dart';
+import '../../data/models/user_public_profile.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import 'completed_section_tag_filter_bar.dart';
@@ -217,6 +220,8 @@ class _PartitionedGroupTaskListState
   List<Widget> _buildActiveByTag(
     BuildContext context,
     List<TaskModel> active,
+    Map<String, UserPublicProfile?> profileMap,
+    User? me,
   ) {
     final tagById = {for (final t in widget.tags) t.id: t};
     bool hasResolvedTag(TaskModel t) =>
@@ -248,6 +253,9 @@ class _PartitionedGroupTaskListState
             key: ValueKey('g-${widget.group.id}-a-${task.id}-$tid'),
             child: TaskCard(
               task: task,
+              assigneeProfiles: profileMap,
+              selfUid: me?.uid,
+              selfPhotoUrl: me?.photoURL,
               onToggle: () {
                 ref
                     .read(firebaseServiceProvider)
@@ -270,6 +278,9 @@ class _PartitionedGroupTaskListState
             key: ValueKey('g-${widget.group.id}-a-${task.id}-sem'),
             child: TaskCard(
               task: task,
+              assigneeProfiles: profileMap,
+              selfUid: me?.uid,
+              selfPhotoUrl: me?.photoURL,
               onToggle: () {
                 ref
                     .read(firebaseServiceProvider)
@@ -289,6 +300,11 @@ class _PartitionedGroupTaskListState
 
   @override
   Widget build(BuildContext context) {
+    final memberKey = memberUidsCacheKey(widget.group.members);
+    final profileMap =
+        ref.watch(groupMemberProfilesProvider(memberKey)).value ?? {};
+    final me = FirebaseAuth.instance.currentUser;
+
     final (:active, :completed) = partitionTasksByCompletion(widget.tasks);
     final prefsKey = CompletedSectionPrefsKeys.groupDetail(widget.group.id);
     final filterTagChoices = _tagsUsedInCompleted(completed);
@@ -300,7 +316,7 @@ class _PartitionedGroupTaskListState
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: [
-        ..._buildActiveByTag(context, active),
+        ..._buildActiveByTag(context, active, profileMap, me),
         if (completed.isNotEmpty) ...[
           const SizedBox(height: 6),
           CompletedTasksSectionHeader(
@@ -336,6 +352,9 @@ class _PartitionedGroupTaskListState
                   child: TaskCard(
                     task: task,
                     tagChips: _tagsForTask(task),
+                    assigneeProfiles: profileMap,
+                    selfUid: me?.uid,
+                    selfPhotoUrl: me?.photoURL,
                     onToggle: () {
                       ref
                           .read(firebaseServiceProvider)

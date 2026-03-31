@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../business_logic/providers/task_provider.dart';
 import '../../data/models/tag_model.dart';
 import '../../data/models/task_model.dart';
+import '../../data/models/user_public_profile.dart';
 import 'task_card.dart';
 
 /// [TaskCard] com etiquetas resolvidas via stream do grupo (aba Hoje).
@@ -15,6 +16,9 @@ class HomeTaskCardWithTags extends ConsumerWidget {
     required this.onToggle,
     this.onEdit,
     this.onDelete,
+    this.assigneeProfiles,
+    this.selfUid,
+    this.selfPhotoUrl,
   });
 
   final TaskModel task;
@@ -22,6 +26,9 @@ class HomeTaskCardWithTags extends ConsumerWidget {
   final VoidCallback onToggle;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final Map<String, UserPublicProfile?>? assigneeProfiles;
+  final String? selfUid;
+  final String? selfPhotoUrl;
 
   static String compositeTagKey(String groupId, String tagId) =>
       '$groupId::$tagId';
@@ -47,6 +54,9 @@ class HomeTaskCardWithTags extends ConsumerWidget {
     return TaskCard(
       task: task,
       tagChips: chips,
+      assigneeProfiles: assigneeProfiles,
+      selfUid: selfUid,
+      selfPhotoUrl: selfPhotoUrl,
       onToggle: onToggle,
       onEdit: onEdit,
       onDelete: onDelete,

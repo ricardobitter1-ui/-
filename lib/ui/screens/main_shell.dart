@@ -33,8 +33,8 @@ class _MainShellState extends State<MainShell> {
             label: 'Grupos',
           ),
           NavigationDestination(
-            icon: Icon(Icons.today_rounded),
-            label: 'Hoje',
+            icon: Icon(Icons.home_rounded),
+            label: 'Início',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_rounded),

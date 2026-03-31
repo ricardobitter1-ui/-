@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
@@ -14,7 +15,6 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Obrigatório para o google_sign_in 7.0.0+
   await GoogleSignIn.instance.initialize(
     serverClientId: '104211948965-1s1m1iiekihfu6e8pmn7su584pk57cnu.apps.googleusercontent.com',
   );
@@ -32,8 +32,15 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Task Location App',
+      title: 'Exm To-Do',
       theme: AppTheme.lightTheme,
+      locale: const Locale('pt', 'BR'),
+      supportedLocales: const [Locale('pt', 'BR')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       home: const AuthWrapper(),
       debugShowCheckedModeBanner: false,
     );

@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../data/models/tag_model.dart';
 import '../../data/models/task_model.dart';
+import '../../data/models/user_public_profile.dart';
+import '../../utils/scheduled_badge_label.dart';
 import '../theme/app_theme.dart';
+import 'custom_avatar.dart';
 
 class TaskCard extends StatelessWidget {
   final TaskModel task;
@@ -10,6 +14,14 @@ class TaskCard extends StatelessWidget {
   final VoidCallback? onDelete;
   /// Etiquetas a mostrar no cartão (ex.: concluídas com tags do grupo).
   final List<TagModel>? tagChips;
+  /// Perfis públicos dos membros (uid → perfil); pode ser vazio — usa-se fallback de rótulo/inicial.
+  final Map<String, UserPublicProfile?>? assigneeProfiles;
+  final String? selfUid;
+  final String? selfPhotoUrl;
+  /// Quando preenchido (ex.: lista "Todas"), mostra a qual grupo a tarefa pertence ou "Pessoal".
+  final String? groupLabel;
+  /// Cor do indicador do grupo; opcional (cinza se nula).
+  final Color? groupAccentColor;
 
   const TaskCard({
     super.key,
@@ -18,12 +30,39 @@ class TaskCard extends StatelessWidget {
     this.onEdit,
     this.onDelete,
     this.tagChips,
+    this.assigneeProfiles,
+    this.selfUid,
+    this.selfPhotoUrl,
+    this.groupLabel,
+    this.groupAccentColor,
   });
+
+  static const double _assigneeRadius = 12;
+  static const double _assigneeOverlapStep = 14;
+  static const int _maxAssigneeAvatars = 3;
 
   @override
   Widget build(BuildContext context) {
     final bool hasLocation = task.latitude != null || task.locationTrigger != null;
     final bool hasDate = task.dueDate != null;
+    final bool hasAssignees = task.assigneeIds.isNotEmpty;
+    final bool showMetaRow = hasLocation || hasDate || hasAssignees;
+
+    final int firstDayIndex =
+        MaterialLocalizations.of(context).firstDayOfWeekIndex;
+
+    ScheduledBadgeData? scheduleData;
+    if (hasDate && task.dueDate != null) {
+      scheduleData = formatScheduledBadge(
+        due: task.dueDate!,
+        now: DateTime.now(),
+        firstDayOfWeekIndex: firstDayIndex,
+      );
+    }
+
+    final Color scheduleColor = scheduleData != null && scheduleData.isOverdue
+        ? Theme.of(context).colorScheme.error
+        : AppTheme.primaryBlue;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -77,14 +116,42 @@ class TaskCard extends StatelessWidget {
                             ),
                         ],
                       ),
+                      if (groupLabel != null && groupLabel!.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: groupAccentColor ?? Colors.grey.shade400,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                groupLabel!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       if (task.description.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
                           task.description,
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontSize: 14,
-                            color: Colors.grey.shade600,
-                          ),
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
+                              ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -131,22 +198,26 @@ class TaskCard extends StatelessWidget {
                           ],
                         ),
                       ],
-                      if (hasLocation || hasDate) ...[
+                      if (showMetaRow) ...[
                         const SizedBox(height: 16),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            if (hasLocation) _buildBadge(
-                              icon: Icons.location_on_rounded, 
-                              label: task.locationTrigger == 'departure' ? 'Ao Sair' : 'Localização',
-                              color: Colors.blue,
-                            ),
-                            if (hasDate) _buildBadge(
-                              icon: Icons.alarm_rounded, 
-                              label: "Agendado",
-                              color: AppTheme.primaryBlue,
-                            ),
+                            if (hasAssignees) _buildAssigneeStack(context),
+                            if (hasLocation)
+                              _buildBadge(
+                                icon: Icons.location_on_rounded,
+                                label: task.locationTrigger == 'departure' ? 'Ao Sair' : 'Localização',
+                                color: Colors.blue,
+                              ),
+                            if (hasDate && scheduleData != null)
+                              _buildBadge(
+                                icon: Icons.alarm_rounded,
+                                label: scheduleData.label,
+                                color: scheduleColor,
+                              ),
                           ],
                         )
                       ]
@@ -156,6 +227,72 @@ class TaskCard extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssigneeStack(BuildContext context) {
+    final ids = task.assigneeIds;
+    if (ids.isEmpty) return const SizedBox.shrink();
+
+    final map = assigneeProfiles ?? const <String, UserPublicProfile?>{};
+    final names = ids.map((id) => memberDisplayLabel(id, map)).join(', ');
+    final visible = ids.take(_maxAssigneeAvatars).toList();
+    final overflow = ids.length - visible.length;
+    final stackWidth = visible.isEmpty
+        ? 0.0
+        : 2 * _assigneeRadius + (visible.length - 1) * _assigneeOverlapStep;
+
+    return Tooltip(
+      message: names,
+      child: Semantics(
+        label: 'Responsáveis: $names',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: stackWidth,
+              height: 2 * _assigneeRadius,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  for (var i = 0; i < visible.length; i++)
+                    Positioned(
+                      left: i * _assigneeOverlapStep,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppTheme.cardSurface, width: 2),
+                        ),
+                        child: CustomAvatar(
+                          radius: _assigneeRadius,
+                          photoUrl: memberPhotoUrl(
+                            visible[i],
+                            map,
+                            selfUid: selfUid,
+                            selfPhotoUrl: selfPhotoUrl,
+                          ),
+                          displayName: memberDisplayLabel(visible[i], map),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (overflow > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Text(
+                  '+$overflow',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -180,7 +317,7 @@ class TaskCard extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(
-            color: task.isCompleted ? AppTheme.primaryBlue : Colors.grey.shade300, 
+            color: task.isCompleted ? AppTheme.primaryBlue : Colors.grey.shade300,
             width: 2,
           ),
           color: task.isCompleted ? AppTheme.primaryBlue : Colors.white,

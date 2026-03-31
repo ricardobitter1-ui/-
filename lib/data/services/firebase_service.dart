@@ -9,6 +9,7 @@ import '../models/tag_model.dart';
 import '../models/group_model.dart';
 import '../models/group_invite_model.dart';
 import '../models/user_public_profile.dart';
+import '../../utils/title_search_key.dart';
 import 'auth_service.dart';
 import 'user_public_profile_sync.dart';
 
@@ -37,6 +38,9 @@ class FirebaseService {
     return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
+  /// Integrações: buscar por nome estável com a mesma normalização do app —
+  /// `where('titleSearchKey', isEqualTo: normalizeTitleSearchKey(termo))` e filtros
+  /// de escopo (`ownerId`, `groupId`, etc.). Índice composto conforme a query.
   CollectionReference get _tasksCollection => _firestore.collection('tasks');
   CollectionReference get _groupsCollection => _firestore.collection('groups');
   CollectionReference get _groupInvitesCollection =>
@@ -44,10 +48,14 @@ class FirebaseService {
 
   TaskModel _taskFromDoc(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    final rawKey = data['titleSearchKey'];
+    final fromDoc = rawKey is String ? rawKey.trim() : null;
     return TaskModel(
       id: doc.id,
       title: data['title'] ?? '',
       description: data['description'] ?? '',
+      resolvedSearchKey:
+          (fromDoc != null && fromDoc.isNotEmpty) ? fromDoc : null,
       latitude: (data['latitude'] as num?)?.toDouble(),
       longitude: (data['longitude'] as num?)?.toDouble(),
       isCompleted: data['isCompleted'] ?? false,
@@ -207,6 +215,7 @@ class FirebaseService {
     if (uid == null) throw Exception('Usuário não autenticado');
 
     final taskData = task.toMap()..remove('id');
+    taskData['titleSearchKey'] = normalizeTitleSearchKey(task.title);
     taskData['ownerId'] = uid;
     taskData['createdBy'] = uid;
     taskData['createdAt'] = FieldValue.serverTimestamp();
@@ -221,6 +230,7 @@ class FirebaseService {
   Future<void> updateTask(TaskModel task) async {
     if (uid == null) throw Exception('Usuário não autenticado');
     final taskData = task.toMap()..remove('id');
+    taskData['titleSearchKey'] = normalizeTitleSearchKey(task.title);
     await _tasksCollection.doc(task.id).update(taskData);
   }
 

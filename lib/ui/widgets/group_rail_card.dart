@@ -6,10 +6,9 @@ import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
 import '../theme/group_icon.dart';
 
-/// Card do carrossel de grupos na aba **Hoje** — cor do grupo + ícone, texto branco.
 class GroupRailCard extends StatelessWidget {
   final GroupModel group;
-  final GroupDayProgress stats;
+  final GroupProgress stats;
   final VoidCallback onTap;
 
   const GroupRailCard({
@@ -86,7 +85,7 @@ class GroupRailCard extends StatelessWidget {
               const Spacer(),
               Text(
                 stats.total == 0
-                    ? 'Nada neste dia'
+                    ? 'Nenhuma tarefa'
                     : '${stats.completed}/${stats.total} concluídas',
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.72),
