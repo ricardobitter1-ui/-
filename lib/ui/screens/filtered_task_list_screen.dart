@@ -1,7 +1,15 @@
+// EasyDayWidget não é exportado pelo pacote público.
+// ignore: implementation_imports
+import 'package:easy_date_timeline/src/widgets/easy_day_widget/easy_day_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:easy_date_timeline/easy_date_timeline.dart';
+import '../../business_logic/complete_task_action.dart';
+import '../../business_logic/overdue_occurrences.dart';
 import '../../business_logic/providers/group_provider.dart';
+import '../../business_logic/task_day_visibility.dart';
+import '../../business_logic/task_occurrence_display.dart';
+import '../../utils/calendar_day_key.dart';
 import '../../business_logic/providers/task_provider.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../data/models/group_model.dart';
@@ -10,7 +18,6 @@ import '../../business_logic/task_list_partition.dart';
 import '../../data/models/task_model.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
-import '../../utils/scheduled_badge_label.dart';
 import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
 import '../widgets/task_appear_motion.dart';
@@ -31,7 +38,28 @@ class FilteredTaskListScreen extends ConsumerStatefulWidget {
 
 class _FilteredTaskListScreenState
     extends ConsumerState<FilteredTaskListScreen> {
+  /// Cor do número do dia no timeline quando o fundo ativo é claro (EasyDateTimeLine).
+  static const Color _timelineDayNumOnLight = Color(0xff0D0C0D);
+
   DateTime _selectedDate = DateTime.now();
+
+  static final EasyDayProps _timelineDayProps = EasyDayProps(
+    width: 68,
+    height: 112,
+    dayStructure: DayStructure.dayStrDayNum,
+    activeDayDecoration: BoxDecoration(
+      borderRadius: const BorderRadius.all(Radius.circular(16)),
+      gradient: LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [AppTheme.brandPrimary, AppTheme.brandSecondary],
+      ),
+    ),
+    inactiveDayDecoration: BoxDecoration(
+      borderRadius: const BorderRadius.all(Radius.circular(16)),
+      color: Colors.white,
+    ),
+  );
 
   String get _title {
     switch (widget.filter) {
@@ -44,15 +72,6 @@ class _FilteredTaskListScreenState
       case TaskFilterType.overdue:
         return 'Atrasadas';
     }
-  }
-
-  static bool _isToday(DateTime d) {
-    final now = DateTime.now();
-    return d.year == now.year && d.month == now.month && d.day == now.day;
-  }
-
-  static bool _isSameDay(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   static String _assigneeKeyForFiltered(List<TaskModel> tasks) {
@@ -81,23 +100,57 @@ class _FilteredTaskListScreenState
     switch (widget.filter) {
       case TaskFilterType.today:
         return all
-            .where((t) =>
-                t.dueDate != null && _isSameDay(t.dueDate!, _selectedDate))
+            .where((t) => taskVisibleOnDay(t, _selectedDate))
             .toList();
       case TaskFilterType.scheduled:
-        return all
-            .where((t) => t.dueDate != null && !_isToday(t.dueDate!))
-            .toList();
+        final list = all.where(taskMatchesScheduledFilter).toList()
+          ..sort(
+            (a, b) => (a.dueDate ?? DateTime(0))
+                .compareTo(b.dueDate ?? DateTime(0)),
+          );
+        return list;
       case TaskFilterType.all:
         return all;
       case TaskFilterType.overdue:
-        final now = DateTime.now();
-        return all
-            .where((t) =>
-                t.dueDate != null &&
-                isDueDateTimePast(t.dueDate!, now) &&
-                !t.isCompleted)
-            .toList();
+        // Lista real vem de [collectOverdueOccurrenceRows] no build.
+        return [];
+    }
+  }
+
+  List<TaskModel> _tasksForAssigneeKey(List<TaskModel> all) {
+    final now = DateTime.now();
+    switch (widget.filter) {
+      case TaskFilterType.overdue:
+        return collectOverdueOccurrenceRows(all, now).map((r) => r.task).toList();
+      case TaskFilterType.today:
+        final f = all.where((t) => taskVisibleOnDay(t, _selectedDate)).toList();
+        final p = partitionTasksByCompletionForCalendarDay(f, _selectedDate);
+        return [...p.active, ...p.completed];
+      default:
+        return _applyFilter(all);
+    }
+  }
+
+  Future<void> _toggleTaskForList(
+    TaskModel task, {
+    DateTime? occurrenceCalendarDay,
+  }) async {
+    final fs = ref.read(firebaseServiceProvider);
+    final ns = ref.read(notificationServiceProvider);
+    final ok = await completeTaskToggle(
+      fs: fs,
+      ns: ns,
+      task: task,
+      occurrenceCalendarDay: occurrenceCalendarDay,
+    );
+    if (!ok && occurrenceCalendarDay == null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Esta série não tem ocorrência neste dia. Abra Hoje e selecione a data.',
+          ),
+        ),
+      );
     }
   }
 
@@ -169,11 +222,7 @@ class _FilteredTaskListScreenState
     final me = ref.watch(authStateProvider).value;
 
     final assigneeKey = tasksAsync.maybeWhen(
-      data: (all) {
-        final filtered = _applyFilter(all);
-        final (:active, :completed) = partitionTasksByCompletion(filtered);
-        return _assigneeKeyForFiltered([...active, ...completed]);
-      },
+      data: (all) => _assigneeKeyForFiltered(_tasksForAssigneeKey(all)),
       orElse: () => '',
     );
     final assigneeProfileMap =
@@ -190,12 +239,65 @@ class _FilteredTaskListScreenState
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Erro: $e')),
         data: (allTasks) {
+          if (widget.filter == TaskFilterType.overdue) {
+            final rows = collectOverdueOccurrenceRows(allTasks, DateTime.now());
+            return CustomScrollView(
+              slivers: [
+                if (rows.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _buildEmptyState(),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 80),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final row = rows[index];
+                          final task = row.task;
+                          return TaskAppearMotion(
+                            key: ValueKey(
+                              'fl-o-${task.id}-${localCalendarDayKey(row.day)}',
+                            ),
+                            child: TaskCard(
+                              task: task,
+                              displayDueOverride:
+                                  displayDueForTaskOnCalendarDay(task, row.day),
+                              assigneeProfiles: assigneeProfileMap,
+                              selfUid: me?.uid,
+                              selfPhotoUrl: me?.photoURL,
+                              groupLabel:
+                                  _resolveGroupLabel(task, groupById),
+                              groupAccentColor:
+                                  _resolveGroupAccent(task, groupById),
+                              onToggle: () => _toggleTaskForList(
+                                task,
+                                occurrenceCalendarDay: row.day,
+                              ),
+                              onEdit: () => _openTaskForm(task: task),
+                              onDelete: () => _confirmAndDeleteTask(task),
+                            ),
+                          );
+                        },
+                        childCount: rows.length,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          }
+
           final filtered = _applyFilter(allTasks);
-          final (:active, :completed) = partitionTasksByCompletion(filtered);
+          final (:active, :completed) = widget.filter == TaskFilterType.today
+              ? partitionTasksByCompletionForCalendarDay(
+                  filtered, _selectedDate)
+              : partitionTasksByCompletion(filtered);
+          final isTodayFilter = widget.filter == TaskFilterType.today;
 
           return CustomScrollView(
             slivers: [
-              if (showCalendar) _buildCalendar(),
+              if (showCalendar) _buildCalendar(allTasks),
               if (active.isEmpty && completed.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
@@ -212,20 +314,26 @@ class _FilteredTaskListScreenState
                           key: ValueKey('fl-a-${task.id}'),
                           child: TaskCard(
                             task: task,
+                            displayDueOverride: isTodayFilter
+                                ? displayDueForTaskOnCalendarDay(
+                                    task, _selectedDate)
+                                : null,
+                            isCompletedOverride: isTodayFilter
+                                ? isOccurrenceCompletedOnCalendarDay(
+                                    task, _selectedDate)
+                                : null,
                             assigneeProfiles: assigneeProfileMap,
                             selfUid: me?.uid,
                             selfPhotoUrl: me?.photoURL,
                             groupLabel: _resolveGroupLabel(task, groupById),
                             groupAccentColor:
                                 _resolveGroupAccent(task, groupById),
-                            onToggle: () async {
-                              final fs = ref.read(firebaseServiceProvider);
-                              final ns =
-                                  ref.read(notificationServiceProvider);
-                              await fs.toggleTaskCompletion(
-                                  task.id, task.isCompleted);
-                              await ns.afterToggleTaskCompletion(task);
-                            },
+                            onToggle: () => _toggleTaskForList(
+                              task,
+                              occurrenceCalendarDay: isTodayFilter
+                                  ? _selectedDate
+                                  : null,
+                            ),
                             onEdit: () => _openTaskForm(task: task),
                             onDelete: () => _confirmAndDeleteTask(task),
                           ),
@@ -259,20 +367,26 @@ class _FilteredTaskListScreenState
                             key: ValueKey('fl-c-${task.id}'),
                             child: TaskCard(
                               task: task,
+                              displayDueOverride: isTodayFilter
+                                  ? displayDueForTaskOnCalendarDay(
+                                      task, _selectedDate)
+                                  : null,
+                              isCompletedOverride: isTodayFilter
+                                  ? isOccurrenceCompletedOnCalendarDay(
+                                      task, _selectedDate)
+                                  : null,
                               assigneeProfiles: assigneeProfileMap,
                               selfUid: me?.uid,
                               selfPhotoUrl: me?.photoURL,
                               groupLabel: _resolveGroupLabel(task, groupById),
                               groupAccentColor:
                                   _resolveGroupAccent(task, groupById),
-                              onToggle: () async {
-                                final fs = ref.read(firebaseServiceProvider);
-                                final ns =
-                                    ref.read(notificationServiceProvider);
-                                await fs.toggleTaskCompletion(
-                                    task.id, task.isCompleted);
-                                await ns.afterToggleTaskCompletion(task);
-                              },
+                              onToggle: () => _toggleTaskForList(
+                                task,
+                                occurrenceCalendarDay: isTodayFilter
+                                    ? _selectedDate
+                                    : null,
+                              ),
                               onEdit: () => _openTaskForm(task: task),
                               onDelete: () => _confirmAndDeleteTask(task),
                             ),
@@ -296,12 +410,19 @@ class _FilteredTaskListScreenState
     );
   }
 
-  Widget _buildCalendar() {
+  Widget _buildCalendar(List<TaskModel> allTasks) {
+    final activeDayColor = AppTheme.brandPrimary;
+    final brightness = ThemeData.estimateBrightnessForColor(activeDayColor);
+    final activeDayTextColor = brightness == Brightness.light
+        ? _timelineDayNumOnLight
+        : Colors.white;
+
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: EasyDateTimeLine(
           initialDate: _selectedDate,
+          activeColor: activeDayColor,
           onDateChange: (selectedDate) {
             setState(() => _selectedDate = selectedDate);
           },
@@ -310,21 +431,39 @@ class _FilteredTaskListScreenState
             monthPickerType: MonthPickerType.switcher,
             selectedDateFormat: SelectedDateFormat.monthOnly,
           ),
-          dayProps: const EasyDayProps(
-            dayStructure: DayStructure.dayStrDayNum,
-            activeDayDecoration: BoxDecoration(
-              borderRadius: BorderRadius.all(Radius.circular(16)),
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [AppTheme.brandPrimary, AppTheme.brandSecondary],
-              ),
-            ),
-            inactiveDayDecoration: BoxDecoration(
-              borderRadius: BorderRadius.all(Radius.circular(16)),
-              color: Colors.white,
-            ),
-          ),
+          dayProps: _timelineDayProps,
+          itemBuilder: (context, date, isSelected, onTap) {
+            final hasActivity =
+                allTasks.any((t) => taskVisibleOnDay(t, date));
+            return Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.topCenter,
+              children: [
+                EasyDayWidget(
+                  easyDayProps: _timelineDayProps,
+                  date: date,
+                  locale: 'pt_BR',
+                  isSelected: isSelected,
+                  isDisabled: false,
+                  onDayPressed: onTap,
+                  activeTextColor: activeDayTextColor,
+                  activeDayColor: activeDayColor,
+                ),
+                if (hasActivity)
+                  Positioned(
+                    top: 6,
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.brandPrimary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );

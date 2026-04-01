@@ -109,6 +109,58 @@ class RecurrenceCalculator {
     }
   }
 
+  /// Há ocorrência da série em [calendarDay] (dia civil), usando a mesma
+  /// semântica que [upcomingOccurrences] (âncora, fim de série, etc.).
+  static bool occursOnCalendarDay({
+    required DateTime anchorDate,
+    required TaskRecurrenceRule rule,
+    required DateTime calendarDay,
+    int? dueTimeHour,
+    int? dueTimeMinute,
+  }) {
+    final start = DateTime(calendarDay.year, calendarDay.month, calendarDay.day);
+    final times = upcomingOccurrences(
+      anchorDate: anchorDate,
+      rule: rule,
+      from: start,
+      dueTimeHour: dueTimeHour,
+      dueTimeMinute: dueTimeMinute,
+      maxCount: 1,
+    );
+    if (times.isEmpty) return false;
+    final first = times.first;
+    return first.year == calendarDay.year &&
+        first.month == calendarDay.month &&
+        first.day == calendarDay.day;
+  }
+
+  /// Instantâneo da ocorrência em [calendarDay], ou null se não há série nesse dia.
+  static DateTime? occurrenceInstantOnCalendarDay({
+    required DateTime anchorDate,
+    required TaskRecurrenceRule rule,
+    required DateTime calendarDay,
+    int? dueTimeHour,
+    int? dueTimeMinute,
+  }) {
+    final start = DateTime(calendarDay.year, calendarDay.month, calendarDay.day);
+    final times = upcomingOccurrences(
+      anchorDate: anchorDate,
+      rule: rule,
+      from: start,
+      dueTimeHour: dueTimeHour,
+      dueTimeMinute: dueTimeMinute,
+      maxCount: 1,
+    );
+    if (times.isEmpty) return null;
+    final first = times.first;
+    if (first.year == calendarDay.year &&
+        first.month == calendarDay.month &&
+        first.day == calendarDay.day) {
+      return first;
+    }
+    return null;
+  }
+
   static List<DateTime> _daily({
     required DateTime anchorDate,
     required TaskRecurrenceRule rule,

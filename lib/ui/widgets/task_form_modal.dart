@@ -4,7 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../business_logic/complete_task_action.dart';
 import '../../business_logic/providers/task_provider.dart';
+import '../../business_logic/task_occurrence_display.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../constants/geofence_constants.dart';
 import '../../data/models/tag_model.dart';
@@ -17,22 +19,29 @@ import '../../data/services/notification_service.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/task_model.dart';
 import '../../data/models/user_public_profile.dart';
+import '../../app_navigator.dart';
 import '../theme/app_theme.dart';
 import 'group_tag_name_color_dialog.dart';
 import 'task_schedule_dialog.dart';
-
-enum _OptionalPanel { none, description, tags, assignees }
 
 class TaskFormModal extends ConsumerStatefulWidget {
   final TaskModel? initialTask;
   final String? forcedGroupId;
   final GroupModel? collaborationGroup;
 
+  /// Atalhos para fluxo de lembrete (notificação).
+  final bool showReminderQuickActions;
+
+  /// Abre o diálogo de agendamento ao exibir (ex.: ação Reprogramar na notificação).
+  final bool openScheduleDialogOnOpen;
+
   const TaskFormModal({
     super.key,
     this.initialTask,
     this.forcedGroupId,
     this.collaborationGroup,
+    this.showReminderQuickActions = false,
+    this.openScheduleDialogOnOpen = false,
   });
 
   @override
@@ -44,7 +53,9 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   late final TextEditingController _descController;
   final FocusNode _titleFocus = FocusNode();
 
-  _OptionalPanel _panel = _OptionalPanel.none;
+  bool _showDescriptionSection = false;
+  bool _showTagsSection = false;
+  bool _showAssigneesSection = false;
 
   String _reminderType = 'none';
   DateTime? _selectedDate;
@@ -119,6 +130,10 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _titleFocus.requestFocus();
       });
+    } else if (widget.openScheduleDialogOnOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openScheduleDialog();
+      });
     }
   }
 
@@ -131,6 +146,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   }
 
   Future<void> _openScheduleDialog() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     final result = await showTaskScheduleDialog(
       context,
       ref,
@@ -160,6 +176,51 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       _locationRadiusMeters = result.locationRadiusMeters;
       _locationLabel = result.locationLabel;
     });
+  }
+
+  Future<void> _quickMarkComplete() async {
+    final task = widget.initialTask;
+    if (task == null || task.id.isEmpty) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (isOccurrenceCompletedOnCalendarDay(task, today)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tarefa já está concluída.')),
+        );
+      }
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      final fs = ref.read(firebaseServiceProvider);
+      final ns = ref.read(notificationServiceProvider);
+      await completeTaskToggle(
+        fs: fs,
+        ns: ns,
+        task: task,
+        occurrenceCalendarDay: today,
+      );
+      if (!mounted) return;
+      final root = rootNavigatorKey.currentContext;
+      if (root != null) {
+        ScaffoldMessenger.of(root).showSnackBar(
+          const SnackBar(content: Text('Tarefa concluída.')),
+        );
+      }
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   void _submit() async {
@@ -245,6 +306,8 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         title: _titleController.text.trim(),
         description: _descController.text.trim(),
         isCompleted: widget.initialTask?.isCompleted ?? false,
+        completedOccurrenceDateKeys:
+            widget.initialTask?.completedOccurrenceDateKeys ?? const [],
         latitude: lat,
         longitude: lng,
         geofenceRadiusMeters: geofenceRadius,
@@ -513,16 +576,16 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         );
   }
 
-  Widget _buildOptionalPanel(
+  Widget _buildOptionalSections(
     BuildContext context,
     AsyncValue<Map<String, UserPublicProfile?>>? profilesAsync,
     User? me,
   ) {
-    switch (_panel) {
-      case _OptionalPanel.none:
-        return const SizedBox.shrink();
-      case _OptionalPanel.description:
-        return TextField(
+    final children = <Widget>[];
+
+    if (_showDescriptionSection) {
+      children.add(
+        TextField(
           controller: _descController,
           decoration: const InputDecoration(
             hintText: 'Detalhe a tarefa (opcional)',
@@ -530,15 +593,50 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
           ),
           maxLines: 4,
           textCapitalization: TextCapitalization.sentences,
-        );
-      case _OptionalPanel.tags:
-        return _buildTagSelectorSection(context);
-      case _OptionalPanel.assignees:
-        if (!_showAssignees || profilesAsync == null) {
-          return const SizedBox.shrink();
-        }
-        return _buildAssigneesPanel(context, profilesAsync, me);
+        ),
+      );
     }
+
+    if (_showTagsSection && _showTagSelector) {
+      if (children.isNotEmpty) {
+        children.add(const SizedBox(height: 16));
+        children.add(const Divider(height: 1));
+        children.add(const SizedBox(height: 12));
+      }
+      children.add(_buildTagSelectorSection(context));
+    }
+
+    if (_showAssigneesSection && _showAssignees && profilesAsync != null) {
+      if (children.isNotEmpty) {
+        children.add(const SizedBox(height: 16));
+        children.add(const Divider(height: 1));
+        children.add(const SizedBox(height: 12));
+      }
+      children.add(_buildAssigneesPanel(context, profilesAsync, me));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
+  }
+
+  void _toggleDescriptionSection() {
+    final opening = !_showDescriptionSection;
+    if (opening) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+    setState(() => _showDescriptionSection = !_showDescriptionSection);
+  }
+
+  void _toggleTagsSection() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _showTagsSection = !_showTagsSection);
+  }
+
+  void _toggleAssigneesSection() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _showAssigneesSection = !_showAssigneesSection);
   }
 
   Widget _buildAssigneesPanel(
@@ -610,9 +708,10 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     );
   }
 
-  void _setPanel(_OptionalPanel p) {
-    setState(() => _panel = _panel == p ? _OptionalPanel.none : p);
-  }
+  bool get _anyOptionalSectionOpen =>
+      _showDescriptionSection ||
+      _showTagsSection ||
+      _showAssigneesSection;
 
   @override
   Widget build(BuildContext context) {
@@ -666,11 +765,31 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                 ),
                 textCapitalization: TextCapitalization.sentences,
               ),
-              if (_panel != _OptionalPanel.none) ...[
+              if (widget.showReminderQuickActions && _isEditing) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _isLoading ? null : _quickMarkComplete,
+                        child: const Text('Marcar como concluída'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _isLoading ? null : _openScheduleDialog,
+                        child: const Text('Reprogramar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (_anyOptionalSectionOpen) ...[
                 const SizedBox(height: 12),
                 Flexible(
                   child: SingleChildScrollView(
-                    child: _buildOptionalPanel(context, profilesAsync, me),
+                    child: _buildOptionalSections(context, profilesAsync, me),
                   ),
                 ),
               ],
@@ -681,8 +800,8 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                   _iconBarItem(
                     icon: Icons.notes_outlined,
                     tooltip: 'Descrição',
-                    selected: _panel == _OptionalPanel.description,
-                    onTap: () => _setPanel(_OptionalPanel.description),
+                    selected: _showDescriptionSection,
+                    onTap: _toggleDescriptionSection,
                   ),
                   _iconBarItem(
                     icon: Icons.event_outlined,
@@ -694,15 +813,15 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                     _iconBarItem(
                       icon: Icons.label_outline,
                       tooltip: 'Etiquetas',
-                      selected: _panel == _OptionalPanel.tags,
-                      onTap: () => _setPanel(_OptionalPanel.tags),
+                      selected: _showTagsSection,
+                      onTap: _toggleTagsSection,
                     ),
                   if (_showAssignees)
                     _iconBarItem(
                       icon: Icons.people_outline,
                       tooltip: 'Responsáveis',
-                      selected: _panel == _OptionalPanel.assignees,
-                      onTap: () => _setPanel(_OptionalPanel.assignees),
+                      selected: _showAssigneesSection,
+                      onTap: _toggleAssigneesSection,
                     ),
                 ],
               ),

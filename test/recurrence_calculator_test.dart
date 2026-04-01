@@ -86,5 +86,105 @@ void main() {
       expect(list.length, 2);
       expect(list.last.day, 2);
     });
+
+    group('occursOnCalendarDay', () {
+      test('diária: acerta dias do intervalo', () {
+        final anchor = DateTime(2026, 1, 10);
+        final rule = TaskRecurrenceRule(
+          interval: 2,
+          unit: RecurrenceUnit.day,
+          repeatHour: 8,
+          repeatMinute: 0,
+        );
+        expect(
+          RecurrenceCalculator.occursOnCalendarDay(
+            anchorDate: anchor,
+            rule: rule,
+            calendarDay: DateTime(2026, 1, 10),
+          ),
+          isTrue,
+        );
+        expect(
+          RecurrenceCalculator.occursOnCalendarDay(
+            anchorDate: anchor,
+            rule: rule,
+            calendarDay: DateTime(2026, 1, 11),
+          ),
+          isFalse,
+        );
+        expect(
+          RecurrenceCalculator.occursOnCalendarDay(
+            anchorDate: anchor,
+            rule: rule,
+            calendarDay: DateTime(2026, 1, 12),
+          ),
+          isTrue,
+        );
+      });
+
+      test('semanal: só no dia da máscara', () {
+        final anchor = DateTime(2026, 1, 5); // segunda
+        final mask = 1 << 1; // segunda
+        final rule = TaskRecurrenceRule(
+          interval: 1,
+          unit: RecurrenceUnit.week,
+          weekdayMask: mask,
+          repeatHour: 8,
+          repeatMinute: 0,
+        );
+        expect(
+          RecurrenceCalculator.occursOnCalendarDay(
+            anchorDate: anchor,
+            rule: rule,
+            calendarDay: DateTime(2026, 1, 7),
+          ),
+          isFalse,
+        );
+        expect(
+          RecurrenceCalculator.occursOnCalendarDay(
+            anchorDate: anchor,
+            rule: rule,
+            calendarDay: DateTime(2026, 1, 12),
+          ),
+          isTrue,
+        );
+      });
+
+      test('occurrenceInstantOnCalendarDay devolve o instante', () {
+        final anchor = DateTime(2026, 1, 10);
+        final rule = TaskRecurrenceRule(
+          interval: 1,
+          unit: RecurrenceUnit.day,
+          repeatHour: 8,
+          repeatMinute: 0,
+        );
+        final inst = RecurrenceCalculator.occurrenceInstantOnCalendarDay(
+          anchorDate: anchor,
+          rule: rule,
+          calendarDay: DateTime(2026, 1, 12),
+        );
+        expect(inst, DateTime(2026, 1, 12, 8, 0));
+      });
+
+      test('após untilDate no dia civil', () {
+        final anchor = DateTime(2026, 3, 1);
+        final rule = TaskRecurrenceRule(
+          interval: 1,
+          unit: RecurrenceUnit.day,
+          repeatHour: 10,
+          repeatMinute: 0,
+          endType: RecurrenceEndType.untilDate,
+          endDate: DateTime(2026, 3, 2),
+        );
+        expect(
+          RecurrenceCalculator.occursOnCalendarDay(
+            anchorDate: anchor,
+            rule: rule,
+            calendarDay: DateTime(2026, 3, 3),
+          ),
+          isFalse,
+        );
+      });
+    });
   });
 }

@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../business_logic/complete_task_action.dart';
+import '../../business_logic/overdue_occurrences.dart';
 import '../../business_logic/providers/task_provider.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
+import '../../business_logic/task_day_visibility.dart';
 import '../../business_logic/task_list_partition.dart';
+import '../../business_logic/task_occurrence_display.dart';
 import '../../data/models/task_model.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
-import '../../utils/scheduled_badge_label.dart';
 import '../theme/app_theme.dart';
 import '../widgets/task_appear_motion.dart';
 import '../widgets/task_card.dart';
@@ -175,11 +178,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // ── helpers de contagem ────────────────────────────────────────────────
 
-  static bool _isToday(DateTime d) {
-    final now = DateTime.now();
-    return d.year == now.year && d.month == now.month && d.day == now.day;
-  }
-
   static String _homeTodayAssigneeCacheKey(List<TaskModel> todayActive) {
     final n = todayActive.length > 5 ? 5 : todayActive.length;
     final ids = <String>{};
@@ -198,10 +196,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final homeAssigneeKey = tasksAsync.maybeWhen(
       data: (allTasks) {
-        final todayTasks = allTasks
-            .where((t) => t.dueDate != null && _isToday(t.dueDate!))
-            .toList();
-        final todayActive = partitionTasksByCompletion(todayTasks).active;
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final todayTasks =
+            allTasks.where((t) => taskVisibleOnDay(t, today)).toList();
+        final todayActive =
+            partitionTasksByCompletionForCalendarDay(todayTasks, today).active;
         return _homeTodayAssigneeCacheKey(todayActive);
       },
       orElse: () => '',
@@ -216,22 +216,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           error: (err, stack) => Center(child: Text('Erro: $err')),
           data: (allTasks) {
             final now = DateTime.now();
-            final todayTasks = allTasks
-                .where((t) => t.dueDate != null && _isToday(t.dueDate!))
-                .toList();
-            final scheduledTasks = allTasks
-                .where((t) =>
-                    t.dueDate != null && !_isToday(t.dueDate!))
-                .toList();
-            final overdueTasks = allTasks
-                .where((t) =>
-                    t.dueDate != null &&
-                    isDueDateTimePast(t.dueDate!, now) &&
-                    !t.isCompleted)
-                .toList();
+            final today = DateTime(now.year, now.month, now.day);
+            final todayTasks =
+                allTasks.where((t) => taskVisibleOnDay(t, today)).toList();
+            final scheduledTasks =
+                allTasks.where(taskMatchesScheduledFilter).toList();
+            final overdueRows = collectOverdueOccurrenceRows(allTasks, now);
 
-            final todayActive =
-                partitionTasksByCompletion(todayTasks).active;
+            final todayActive = partitionTasksByCompletionForCalendarDay(
+              todayTasks,
+              today,
+            ).active;
 
             return CustomScrollView(
               slivers: [
@@ -240,7 +235,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   todayCount: todayTasks.length,
                   scheduledCount: scheduledTasks.length,
                   allCount: allTasks.length,
-                  overdueCount: overdueTasks.length,
+                  overdueCount: overdueRows.length,
                 ),
                 _buildSectionTitle('Tarefas de hoje'),
                 if (todayActive.isEmpty)
@@ -261,6 +256,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             key: ValueKey('home-today-${task.id}'),
                             child: TaskCard(
                               task: task,
+                              displayDueOverride:
+                                  displayDueForTaskOnCalendarDay(task, today),
+                              isCompletedOverride:
+                                  isOccurrenceCompletedOnCalendarDay(
+                                      task, today),
                               assigneeProfiles: assigneeProfileMap,
                               selfUid: user?.uid,
                               selfPhotoUrl: user?.photoURL,
@@ -268,9 +268,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 final fs = ref.read(firebaseServiceProvider);
                                 final ns =
                                     ref.read(notificationServiceProvider);
-                                await fs.toggleTaskCompletion(
-                                    task.id, task.isCompleted);
-                                await ns.afterToggleTaskCompletion(task);
+                                await completeTaskToggle(
+                                  fs: fs,
+                                  ns: ns,
+                                  task: task,
+                                  occurrenceCalendarDay: today,
+                                );
                               },
                               onEdit: () => _openTaskForm(task: task),
                               onDelete: () => _confirmAndDeleteTask(task),

@@ -35,6 +35,10 @@ class TaskCard extends StatelessWidget {
   final String? groupLabel;
   /// Cor do indicador do grupo; opcional (cinza se nula).
   final Color? groupAccentColor;
+  /// Sobrepõe [TaskModel.dueDate] no badge de agenda (ex.: ocorrência do dia na timeline).
+  final DateTime? displayDueOverride;
+  /// Sobrepõe [TaskModel.isCompleted] (ex.: conclusão por dia em recorrentes).
+  final bool? isCompletedOverride;
 
   const TaskCard({
     super.key,
@@ -48,6 +52,8 @@ class TaskCard extends StatelessWidget {
     this.selfPhotoUrl,
     this.groupLabel,
     this.groupAccentColor,
+    this.displayDueOverride,
+    this.isCompletedOverride,
   });
 
   static const double _assigneeRadius = 12;
@@ -56,8 +62,11 @@ class TaskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool done = isCompletedOverride ?? task.isCompleted;
+    final DateTime? dueForBadge = displayDueOverride ?? task.dueDate;
+
     final bool hasLocation = task.reminderType == 'location';
-    final bool hasDate = task.dueDate != null;
+    final bool hasDate = dueForBadge != null;
     final bool hasRecurrence =
         task.recurrence != null && task.reminderType == 'datetime';
     final bool hasAssignees = task.assigneeIds.isNotEmpty;
@@ -68,9 +77,9 @@ class TaskCard extends StatelessWidget {
         MaterialLocalizations.of(context).firstDayOfWeekIndex;
 
     ScheduledBadgeData? scheduleData;
-    if (hasDate && task.dueDate != null) {
+    if (dueForBadge != null) {
       scheduleData = formatScheduledBadge(
-        due: task.dueDate!,
+        due: dueForBadge,
         now: DateTime.now(),
         firstDayOfWeekIndex: firstDayIndex,
       );
@@ -102,9 +111,9 @@ class TaskCard extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildCheckbox(context),
-                const SizedBox(width: 16),
+                children: [
+                  _buildCheckbox(context, done),
+                  const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,8 +125,8 @@ class TaskCard extends StatelessWidget {
                             child: Text(
                               task.title,
                               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-                                    color: task.isCompleted ? Colors.grey : const Color(0xFF2B2D42),
+                                    decoration: done ? TextDecoration.lineThrough : null,
+                                    color: done ? Colors.grey : const Color(0xFF2B2D42),
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -320,11 +329,11 @@ class TaskCard extends StatelessWidget {
     );
   }
 
-  Widget _buildCheckbox(BuildContext context) {
+  Widget _buildCheckbox(BuildContext context, bool done) {
     final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     return Semantics(
       button: true,
-      label: task.isCompleted
+      label: done
           ? 'Marcar tarefa como pendente'
           : 'Marcar tarefa como concluída',
       child: GestureDetector(
@@ -339,12 +348,12 @@ class TaskCard extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(
-            color: task.isCompleted ? AppTheme.brandPrimary : Colors.grey.shade300,
+            color: done ? AppTheme.brandPrimary : Colors.grey.shade300,
             width: 2,
           ),
-          color: task.isCompleted ? AppTheme.brandPrimary : Colors.white,
+          color: done ? AppTheme.brandPrimary : Colors.white,
         ),
-        child: task.isCompleted
+        child: done
             ? const Icon(Icons.check, size: 16, color: Colors.white)
             : null,
         ),

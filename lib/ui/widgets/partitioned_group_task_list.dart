@@ -2,8 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../business_logic/complete_task_action.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../business_logic/task_list_partition.dart';
+import '../../business_logic/task_occurrence_display.dart';
 import '../../data/local/completed_section_prefs.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/tag_model.dart';
@@ -336,11 +338,36 @@ class _PartitionedGroupTaskListState
     );
   }
 
+  Future<void> _toggleGroupTask(
+    BuildContext context,
+    TaskModel task,
+    DateTime calendarDay,
+  ) async {
+    final fs = ref.read(firebaseServiceProvider);
+    final ns = ref.read(notificationServiceProvider);
+    final ok = await completeTaskToggle(
+      fs: fs,
+      ns: ns,
+      task: task,
+      occurrenceCalendarDay: calendarDay,
+    );
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Esta série não tem ocorrência neste dia.',
+          ),
+        ),
+      );
+    }
+  }
+
   List<Widget> _buildActiveByTag(
     BuildContext context,
     List<TaskModel> active,
     Map<String, UserPublicProfile?> profileMap,
     User? me,
+    DateTime calendarDay,
   ) {
     final tagById = {for (final t in widget.tags) t.id: t};
 
@@ -380,15 +407,14 @@ class _PartitionedGroupTaskListState
               key: ValueKey('g-${widget.group.id}-a-${task.id}-$tid'),
               child: TaskCard(
                 task: task,
+                displayDueOverride:
+                    displayDueForTaskOnCalendarDay(task, calendarDay),
+                isCompletedOverride:
+                    isOccurrenceCompletedOnCalendarDay(task, calendarDay),
                 assigneeProfiles: profileMap,
                 selfUid: me?.uid,
                 selfPhotoUrl: me?.photoURL,
-                onToggle: () async {
-                  final fs = ref.read(firebaseServiceProvider);
-                  final ns = ref.read(notificationServiceProvider);
-                  await fs.toggleTaskCompletion(task.id, task.isCompleted);
-                  await ns.afterToggleTaskCompletion(task);
-                },
+                onToggle: () => _toggleGroupTask(context, task, calendarDay),
                 onEdit: () => _openEdit(context, task),
                 onDelete: () => _confirmAndDeleteTask(context, task),
               ),
@@ -415,15 +441,14 @@ class _PartitionedGroupTaskListState
               key: ValueKey('g-${widget.group.id}-a-${task.id}-sem'),
               child: TaskCard(
                 task: task,
+                displayDueOverride:
+                    displayDueForTaskOnCalendarDay(task, calendarDay),
+                isCompletedOverride:
+                    isOccurrenceCompletedOnCalendarDay(task, calendarDay),
                 assigneeProfiles: profileMap,
                 selfUid: me?.uid,
                 selfPhotoUrl: me?.photoURL,
-                onToggle: () async {
-                  final fs = ref.read(firebaseServiceProvider);
-                  final ns = ref.read(notificationServiceProvider);
-                  await fs.toggleTaskCompletion(task.id, task.isCompleted);
-                  await ns.afterToggleTaskCompletion(task);
-                },
+                onToggle: () => _toggleGroupTask(context, task, calendarDay),
                 onEdit: () => _openEdit(context, task),
                 onDelete: () => _confirmAndDeleteTask(context, task),
               ),
@@ -443,8 +468,11 @@ class _PartitionedGroupTaskListState
     final profileMap =
         ref.watch(groupMemberProfilesProvider(memberKey)).value ?? {};
     final me = FirebaseAuth.instance.currentUser;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
-    final (:active, :completed) = partitionTasksByCompletion(widget.tasks);
+    final (:active, :completed) =
+        partitionTasksByCompletionForCalendarDay(widget.tasks, today);
     final q = normalizeTitleSearchKey(_searchController.text);
     final activeFiltered = q.isEmpty
         ? active
@@ -525,7 +553,7 @@ class _PartitionedGroupTaskListState
               style: TextStyle(color: Colors.grey, fontSize: 16),
             ),
           ),
-        ..._buildActiveByTag(context, activeFiltered, profileMap, me),
+        ..._buildActiveByTag(context, activeFiltered, profileMap, me, today),
         if (completed.isNotEmpty) ...[
           const SizedBox(height: 6),
           CompletedTasksSectionHeader(
@@ -561,15 +589,14 @@ class _PartitionedGroupTaskListState
                   child: TaskCard(
                     task: task,
                     tagChips: _tagsForTask(task),
+                    displayDueOverride:
+                        displayDueForTaskOnCalendarDay(task, today),
+                    isCompletedOverride:
+                        isOccurrenceCompletedOnCalendarDay(task, today),
                     assigneeProfiles: profileMap,
                     selfUid: me?.uid,
                     selfPhotoUrl: me?.photoURL,
-                    onToggle: () async {
-                      final fs = ref.read(firebaseServiceProvider);
-                      final ns = ref.read(notificationServiceProvider);
-                      await fs.toggleTaskCompletion(task.id, task.isCompleted);
-                      await ns.afterToggleTaskCompletion(task);
-                    },
+                    onToggle: () => _toggleGroupTask(context, task, today),
                     onEdit: () => _openEdit(context, task),
                     onDelete: () => _confirmAndDeleteTask(context, task),
                   ),

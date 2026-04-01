@@ -7,6 +7,7 @@ import '../../data/services/user_public_profile_sync.dart';
 import '../screens/main_shell.dart';
 import '../screens/login_screen.dart';
 import 'pending_invite_coordinator.dart';
+import 'task_notification_coordinator.dart';
 
 class AuthWrapper extends ConsumerStatefulWidget {
   const AuthWrapper({super.key});
@@ -43,7 +44,9 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
     return authState.when(
       data: (user) {
         if (user != null) {
-          return const PendingInviteCoordinator(child: MainShell());
+          return const PendingInviteCoordinator(
+            child: TaskNotificationCoordinator(child: MainShell()),
+          );
         }
         return const LoginScreen();
       },

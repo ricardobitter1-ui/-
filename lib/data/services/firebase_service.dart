@@ -13,6 +13,7 @@ import '../models/tag_model.dart';
 import '../models/group_model.dart';
 import '../models/group_invite_model.dart';
 import '../models/user_public_profile.dart';
+import '../../utils/calendar_day_key.dart';
 import '../../utils/title_search_key.dart';
 import 'auth_service.dart';
 import 'user_public_profile_sync.dart';
@@ -50,6 +51,17 @@ class FirebaseService {
   CollectionReference get _groupInvitesCollection =>
       _firestore.collection('groupInvites');
 
+  static List<String> _parseCompletedOccurrenceKeys(Object? raw) {
+    if (raw == null) return [];
+    if (raw is! List) return [];
+    final set = <String>{};
+    for (final e in raw) {
+      final s = e.toString();
+      if (isValidCalendarDayKey(s)) set.add(s);
+    }
+    return set.toList()..sort();
+  }
+
   static bool _inferDueHasTime(Map<String, dynamic> data) {
     final v = data['dueHasTime'];
     if (v is bool) return v;
@@ -59,10 +71,38 @@ class FirebaseService {
     return d.hour != 0 || d.minute != 0 || d.second != 0;
   }
 
+  Future<TaskModel?> fetchTaskById(String taskId) async {
+    if (uid == null) return null;
+    final id = taskId.trim();
+    if (id.isEmpty) return null;
+    try {
+      final snap = await _tasksCollection.doc(id).get();
+      if (!snap.exists) return null;
+      return _taskFromDoc(snap);
+    } catch (_) {
+      return null;
+    }
+  }
+
   TaskModel _taskFromDoc(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     final rawKey = data['titleSearchKey'];
     final fromDoc = rawKey is String ? rawKey.trim() : null;
+    var completedKeys = _parseCompletedOccurrenceKeys(
+      data['completedOccurrenceDateKeys'],
+    );
+    var isCompleted = data['isCompleted'] ?? false;
+    final reminderType = data['reminderType'] as String?;
+    final dueDate = (data['dueDate'] as Timestamp?)?.toDate();
+    final recurrence = TaskRecurrenceRule.fromMap(data['recurrence']);
+    if (recurrence != null &&
+        reminderType == 'datetime' &&
+        isCompleted &&
+        completedKeys.isEmpty &&
+        dueDate != null) {
+      completedKeys = [localCalendarDayKey(dueDate)];
+      isCompleted = false;
+    }
     return TaskModel(
       id: doc.id,
       title: data['title'] ?? '',
@@ -74,9 +114,9 @@ class FirebaseService {
       geofenceRadiusMeters:
           (data['geofenceRadiusMeters'] as num?)?.toDouble(),
       locationLabel: data['locationLabel'] as String?,
-      isCompleted: data['isCompleted'] ?? false,
-      reminderType: data['reminderType'],
-      dueDate: (data['dueDate'] as Timestamp?)?.toDate(),
+      isCompleted: isCompleted,
+      reminderType: reminderType,
+      dueDate: dueDate,
       dueHasTime: _inferDueHasTime(data),
       locationTrigger: data['locationTrigger'],
       ownerId: data['ownerId'],
@@ -88,7 +128,8 @@ class FirebaseService {
       tagIds: List<String>.from(
         data['tagIds'] as List<dynamic>? ?? [],
       ),
-      recurrence: TaskRecurrenceRule.fromMap(data['recurrence']),
+      recurrence: recurrence,
+      completedOccurrenceDateKeys: completedKeys,
     );
   }
 
@@ -244,6 +285,25 @@ class FirebaseService {
 
   Future<void> toggleTaskCompletion(String taskId, bool currentStatus) async {
     await _tasksCollection.doc(taskId).update({'isCompleted': !currentStatus});
+  }
+
+  /// Concluir / desmarcar ocorrência no dia civil [dateKey] (`yyyy-MM-dd`).
+  Future<void> setOccurrenceDateKeyCompleted(
+    String taskId,
+    String dateKey,
+    bool completed,
+  ) async {
+    if (!isValidCalendarDayKey(dateKey)) return;
+    final ref = _tasksCollection.doc(taskId);
+    if (completed) {
+      await ref.update({
+        'completedOccurrenceDateKeys': FieldValue.arrayUnion([dateKey]),
+      });
+    } else {
+      await ref.update({
+        'completedOccurrenceDateKeys': FieldValue.arrayRemove([dateKey]),
+      });
+    }
   }
 
   Future<void> updateTask(TaskModel task) async {

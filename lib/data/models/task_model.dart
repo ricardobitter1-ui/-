@@ -36,6 +36,9 @@ class TaskModel {
   final List<String> tagIds;
   /// Repetição de lembrete (só relevante com `reminderType == 'datetime'`).
   final TaskRecurrenceRule? recurrence;
+  /// Dias civis locais (`yyyy-MM-dd`) em que a ocorrência da série foi concluída.
+  /// Só usado quando [recurrence] != null e lembrete por data/hora.
+  final List<String> completedOccurrenceDateKeys;
 
   TaskModel({
     required this.id,
@@ -57,6 +60,7 @@ class TaskModel {
     this.assigneeIds = const [],
     this.tagIds = const [],
     this.recurrence,
+    this.completedOccurrenceDateKeys = const [],
   }) : titleSearchKey = (resolvedSearchKey != null && resolvedSearchKey.isNotEmpty)
             ? resolvedSearchKey
             : normalizeTitleSearchKey(title);
@@ -80,6 +84,7 @@ class TaskModel {
     Object? assigneeIds = _unset,
     Object? tagIds = _unset,
     Object? recurrence = _unset,
+    Object? completedOccurrenceDateKeys = _unset,
   }) {
     final newTitle = title ?? this.title;
     return TaskModel(
@@ -110,6 +115,11 @@ class TaskModel {
       recurrence: identical(recurrence, _unset)
           ? this.recurrence
           : recurrence as TaskRecurrenceRule?,
+      completedOccurrenceDateKeys: identical(completedOccurrenceDateKeys, _unset)
+          ? this.completedOccurrenceDateKeys
+          : List<String>.from(
+              completedOccurrenceDateKeys as List<String>,
+            ),
     );
   }
 
@@ -134,6 +144,7 @@ class TaskModel {
       'assigneeIds': assigneeIds,
       'tagIds': tagIds,
       'recurrence': recurrence?.toMap(),
+      'completedOccurrenceDateKeys': completedOccurrenceDateKeys,
     };
   }
 }
