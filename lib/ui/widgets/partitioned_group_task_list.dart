@@ -21,17 +21,25 @@ import 'task_form_modal.dart';
 /// Chave da secção "Sem etiqueta" no acordeão da lista do grupo.
 const _kSemEtiquetaSection = '_sem_etiqueta';
 
+/// Mensagem quando o grupo ainda não tem tarefas (lista vazia, sem pesquisa).
+const kEmptyGroupTasksMessage =
+    'Nenhuma tarefa neste grupo ainda.\nCrie a primeira para validar o stream!';
+
 class PartitionedGroupTaskList extends ConsumerStatefulWidget {
   const PartitionedGroupTaskList({
     super.key,
     required this.group,
     required this.tasks,
     required this.tags,
+    this.listPrefix,
   });
 
   final GroupModel group;
   final List<TaskModel> tasks;
   final List<TagModel> tags;
+
+  /// Widgets no topo da lista rolável (ex.: membros), antes da pesquisa.
+  final List<Widget>? listPrefix;
 
   @override
   ConsumerState<PartitionedGroupTaskList> createState() =>
@@ -196,18 +204,9 @@ class _PartitionedGroupTaskListState
           content: Text('Tarefa "${task.title}" removida.'),
           action: SnackBarAction(
             label: 'Desfazer',
-            onPressed: () {
-              fs.addTask(task);
-              if (task.reminderType == 'datetime' && task.dueDate != null) {
-                ns.scheduleTaskReminder(
-                  task.id.hashCode,
-                  task.title,
-                  task.description.isEmpty
-                      ? 'Hora de completar sua tarefa!'
-                      : task.description,
-                  task.dueDate!,
-                );
-              }
+            onPressed: () async {
+              final newId = await fs.addTask(task);
+              await ns.syncTaskDatetimeReminders(task.copyWith(id: newId));
             },
           ),
           behavior: SnackBarBehavior.floating,
@@ -218,7 +217,7 @@ class _PartitionedGroupTaskListState
     }
 
     await fs.deleteTask(task.id);
-    await ns.cancelNotification(task.id.hashCode);
+    await ns.cancelAllTaskReminderSlots(task.id);
   }
 
   bool _hasResolvedTag(TaskModel t, Map<String, TagModel> tagById) =>
@@ -384,10 +383,11 @@ class _PartitionedGroupTaskListState
                 assigneeProfiles: profileMap,
                 selfUid: me?.uid,
                 selfPhotoUrl: me?.photoURL,
-                onToggle: () {
-                  ref
-                      .read(firebaseServiceProvider)
-                      .toggleTaskCompletion(task.id, task.isCompleted);
+                onToggle: () async {
+                  final fs = ref.read(firebaseServiceProvider);
+                  final ns = ref.read(notificationServiceProvider);
+                  await fs.toggleTaskCompletion(task.id, task.isCompleted);
+                  await ns.afterToggleTaskCompletion(task);
                 },
                 onEdit: () => _openEdit(context, task),
                 onDelete: () => _confirmAndDeleteTask(context, task),
@@ -418,10 +418,11 @@ class _PartitionedGroupTaskListState
                 assigneeProfiles: profileMap,
                 selfUid: me?.uid,
                 selfPhotoUrl: me?.photoURL,
-                onToggle: () {
-                  ref
-                      .read(firebaseServiceProvider)
-                      .toggleTaskCompletion(task.id, task.isCompleted);
+                onToggle: () async {
+                  final fs = ref.read(firebaseServiceProvider);
+                  final ns = ref.read(notificationServiceProvider);
+                  await fs.toggleTaskCompletion(task.id, task.isCompleted);
+                  await ns.afterToggleTaskCompletion(task);
                 },
                 onEdit: () => _openEdit(context, task),
                 onDelete: () => _confirmAndDeleteTask(context, task),
@@ -463,9 +464,13 @@ class _PartitionedGroupTaskListState
     final completedVisible =
         _applyCompletedFilter(completedFiltered, effectiveFilter);
 
+    final showEmptyGroup =
+        q.isEmpty && active.isEmpty && completed.isEmpty;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: [
+        if (widget.listPrefix != null) ...widget.listPrefix!,
         TextField(
           controller: _searchController,
           decoration: InputDecoration(
@@ -511,6 +516,15 @@ class _PartitionedGroupTaskListState
               style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
             ),
           ),
+        if (showEmptyGroup)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(0, 16, 0, 24),
+            child: Text(
+              kEmptyGroupTasksMessage,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey, fontSize: 16),
+            ),
+          ),
         ..._buildActiveByTag(context, activeFiltered, profileMap, me),
         if (completed.isNotEmpty) ...[
           const SizedBox(height: 6),
@@ -550,10 +564,11 @@ class _PartitionedGroupTaskListState
                     assigneeProfiles: profileMap,
                     selfUid: me?.uid,
                     selfPhotoUrl: me?.photoURL,
-                    onToggle: () {
-                      ref
-                          .read(firebaseServiceProvider)
-                          .toggleTaskCompletion(task.id, task.isCompleted);
+                    onToggle: () async {
+                      final fs = ref.read(firebaseServiceProvider);
+                      final ns = ref.read(notificationServiceProvider);
+                      await fs.toggleTaskCompletion(task.id, task.isCompleted);
+                      await ns.afterToggleTaskCompletion(task);
                     },
                     onEdit: () => _openEdit(context, task),
                     onDelete: () => _confirmAndDeleteTask(context, task),

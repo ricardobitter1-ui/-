@@ -147,16 +147,9 @@ class _FilteredTaskListScreenState
           content: Text('Tarefa "${task.title}" removida.'),
           action: SnackBarAction(
             label: 'Desfazer',
-            onPressed: () {
-              fs.addTask(task);
-              if (task.reminderType == 'datetime' && task.dueDate != null) {
-                ns.scheduleTaskReminder(
-                  task.id.hashCode,
-                  task.title,
-                  task.description,
-                  task.dueDate!,
-                );
-              }
+            onPressed: () async {
+              final newId = await fs.addTask(task);
+              await ns.syncTaskDatetimeReminders(task.copyWith(id: newId));
             },
           ),
           behavior: SnackBarBehavior.floating,
@@ -167,7 +160,7 @@ class _FilteredTaskListScreenState
     }
 
     await fs.deleteTask(task.id);
-    await ns.cancelNotification(task.id.hashCode);
+    await ns.cancelAllTaskReminderSlots(task.id);
   }
 
   @override
@@ -225,11 +218,13 @@ class _FilteredTaskListScreenState
                             groupLabel: _resolveGroupLabel(task, groupById),
                             groupAccentColor:
                                 _resolveGroupAccent(task, groupById),
-                            onToggle: () {
-                              ref
-                                  .read(firebaseServiceProvider)
-                                  .toggleTaskCompletion(
-                                      task.id, task.isCompleted);
+                            onToggle: () async {
+                              final fs = ref.read(firebaseServiceProvider);
+                              final ns =
+                                  ref.read(notificationServiceProvider);
+                              await fs.toggleTaskCompletion(
+                                  task.id, task.isCompleted);
+                              await ns.afterToggleTaskCompletion(task);
                             },
                             onEdit: () => _openTaskForm(task: task),
                             onDelete: () => _confirmAndDeleteTask(task),
@@ -270,11 +265,13 @@ class _FilteredTaskListScreenState
                               groupLabel: _resolveGroupLabel(task, groupById),
                               groupAccentColor:
                                   _resolveGroupAccent(task, groupById),
-                              onToggle: () {
-                                ref
-                                    .read(firebaseServiceProvider)
-                                    .toggleTaskCompletion(
-                                        task.id, task.isCompleted);
+                              onToggle: () async {
+                                final fs = ref.read(firebaseServiceProvider);
+                                final ns =
+                                    ref.read(notificationServiceProvider);
+                                await fs.toggleTaskCompletion(
+                                    task.id, task.isCompleted);
+                                await ns.afterToggleTaskCompletion(task);
                               },
                               onEdit: () => _openTaskForm(task: task),
                               onDelete: () => _confirmAndDeleteTask(task),

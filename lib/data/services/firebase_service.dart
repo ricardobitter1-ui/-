@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../constants/group_color_presets.dart';
 import '../models/task_model.dart';
+import '../models/task_recurrence.dart';
 import '../models/tag_model.dart';
 import '../models/group_model.dart';
 import '../models/group_invite_model.dart';
@@ -49,6 +50,15 @@ class FirebaseService {
   CollectionReference get _groupInvitesCollection =>
       _firestore.collection('groupInvites');
 
+  static bool _inferDueHasTime(Map<String, dynamic> data) {
+    final v = data['dueHasTime'];
+    if (v is bool) return v;
+    final ts = data['dueDate'] as Timestamp?;
+    if (ts == null) return false;
+    final d = ts.toDate();
+    return d.hour != 0 || d.minute != 0 || d.second != 0;
+  }
+
   TaskModel _taskFromDoc(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     final rawKey = data['titleSearchKey'];
@@ -67,6 +77,7 @@ class FirebaseService {
       isCompleted: data['isCompleted'] ?? false,
       reminderType: data['reminderType'],
       dueDate: (data['dueDate'] as Timestamp?)?.toDate(),
+      dueHasTime: _inferDueHasTime(data),
       locationTrigger: data['locationTrigger'],
       ownerId: data['ownerId'],
       groupId: data['groupId'],
@@ -77,6 +88,7 @@ class FirebaseService {
       tagIds: List<String>.from(
         data['tagIds'] as List<dynamic>? ?? [],
       ),
+      recurrence: TaskRecurrenceRule.fromMap(data['recurrence']),
     );
   }
 
@@ -217,7 +229,7 @@ class FirebaseService {
         .map((snapshot) => snapshot.docs.map(_taskFromDoc).toList());
   }
 
-  Future<void> addTask(TaskModel task) async {
+  Future<String> addTask(TaskModel task) async {
     if (uid == null) throw Exception('Usuário não autenticado');
 
     final taskData = task.toMap()..remove('id');
@@ -226,7 +238,8 @@ class FirebaseService {
     taskData['createdBy'] = uid;
     taskData['createdAt'] = FieldValue.serverTimestamp();
 
-    await _tasksCollection.add(taskData);
+    final doc = await _tasksCollection.add(taskData);
+    return doc.id;
   }
 
   Future<void> toggleTaskCompletion(String taskId, bool currentStatus) async {

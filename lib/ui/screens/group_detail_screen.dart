@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import '../../business_logic/providers/group_provider.dart';
 import '../../business_logic/providers/task_provider.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../data/models/group_model.dart';
+import '../../data/models/user_public_profile.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
 import '../theme/app_theme.dart';
@@ -458,6 +460,89 @@ class GroupDetailScreen extends ConsumerWidget {
     }
   }
 
+  /// Cabeçalho rolável: aviso de grupo pessoal + acordeão de membros.
+  List<Widget> _groupDetailScrollPrefix(
+    BuildContext context,
+    WidgetRef ref,
+    GroupModel g,
+    AsyncValue<Map<String, UserPublicProfile?>> profilesAsync,
+    User? me,
+  ) {
+    return [
+      if (g.isPersonal)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8, top: 4),
+          child: Text(
+            'Grupo pessoal — não pode ser compartilhado.',
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+          ),
+        ),
+      ExpansionTile(
+        title: Text('Membros (${g.members.length})'),
+        children: [
+          profilesAsync.when(
+            loading: () => const ListTile(
+              leading: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              title: Text('A carregar membros…'),
+            ),
+            error: (e, _) => ListTile(title: Text('Erro: $e')),
+            data: (profileMap) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final m in g.members)
+                  ListTile(
+                    leading: CustomAvatar(
+                      photoUrl: memberPhotoUrl(
+                        m,
+                        profileMap,
+                        selfUid: me?.uid,
+                        selfPhotoUrl: me?.photoURL,
+                      ),
+                      displayName: memberDisplayLabel(m, profileMap),
+                      radius: 20,
+                    ),
+                    title: Text(memberDisplayLabel(m, profileMap)),
+                    subtitle: m == g.ownerId
+                        ? const Text('Dono')
+                        : (g.effectiveAdmins.contains(m)
+                            ? const Text('Admin')
+                            : null),
+                    trailing: _isAdmin(ref, g) &&
+                            m != g.ownerId &&
+                            !g.isPersonal
+                        ? IconButton(
+                            icon: const Icon(
+                              Icons.remove_circle_outline_rounded,
+                              color: Colors.redAccent,
+                            ),
+                            onPressed: () => _confirmRemoveMember(
+                              context,
+                              ref,
+                              g,
+                              m,
+                              memberDisplayLabel(m, profileMap),
+                            ),
+                          )
+                        : null,
+                  ),
+                if (!g.isPersonal && _isAdmin(ref, g))
+                  ListTile(
+                    leading: const Icon(Icons.person_add_alt_1_rounded),
+                    title: const Text('Convidar por e-mail'),
+                    onTap: () => _showInviteByEmail(context, ref, g),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final g = _resolvedGroup(ref);
@@ -466,10 +551,32 @@ class GroupDetailScreen extends ConsumerWidget {
       groupMemberProfilesProvider(memberUidsCacheKey(g.members)),
     );
     final me = ref.watch(authStateProvider).value;
+    final groupColor = parseAppHexColor(g.color);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(g.name),
+        titleSpacing: 8,
+        title: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: groupColor.withValues(alpha: 0.16),
+              child: Icon(
+                groupIconFromKey(g.icon),
+                size: 20,
+                color: groupColor,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                g.name,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ),
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded),
@@ -545,167 +652,27 @@ class GroupDetailScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Container(
-            margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: parseAppHexColor(g.color).withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: parseAppHexColor(
-                    g.color,
-                  ).withValues(alpha: 0.16),
-                  child: Icon(
-                    groupIconFromKey(g.icon),
-                    color: parseAppHexColor(g.color),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        g.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                        ),
-                      ),
-                      if (g.isPersonal)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 6),
-                          child: Text(
-                            'Grupo pessoal — não pode ser partilhado.',
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '${g.members.length} membro(s)',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ExpansionTile(
-            title: const Text('Membros'),
-            children: [
-              profilesAsync.when(
-                loading: () => const ListTile(
-                  leading: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  title: Text('A carregar membros…'),
-                ),
-                error: (e, _) => ListTile(title: Text('Erro: $e')),
-                data: (profileMap) => Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final m in g.members)
-                      ListTile(
-                        leading: CustomAvatar(
-                          photoUrl: memberPhotoUrl(
-                            m,
-                            profileMap,
-                            selfUid: me?.uid,
-                            selfPhotoUrl: me?.photoURL,
-                          ),
-                          displayName: memberDisplayLabel(m, profileMap),
-                          radius: 20,
-                        ),
-                        title: Text(memberDisplayLabel(m, profileMap)),
-                        subtitle: m == g.ownerId
-                            ? const Text('Dono')
-                            : (g.effectiveAdmins.contains(m)
-                                ? const Text('Admin')
-                                : null),
-                        trailing: _isAdmin(ref, g) &&
-                                m != g.ownerId &&
-                                !g.isPersonal
-                            ? IconButton(
-                                icon: const Icon(
-                                  Icons.remove_circle_outline_rounded,
-                                  color: Colors.redAccent,
-                                ),
-                                onPressed: () => _confirmRemoveMember(
-                                  context,
-                                  ref,
-                                  g,
-                                  m,
-                                  memberDisplayLabel(m, profileMap),
-                                ),
-                              )
-                            : null,
-                      ),
-                    if (!g.isPersonal && _isAdmin(ref, g))
-                      ListTile(
-                        leading: const Icon(Icons.person_add_alt_1_rounded),
-                        title: const Text('Convidar por e-mail'),
-                        onTap: () => _showInviteByEmail(context, ref, g),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: ref.watch(groupTagsStreamProvider(g.id)).when(
+      body: ref.watch(groupTagsStreamProvider(g.id)).when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('Etiquetas: $e')),
+            data: (tags) => tasksAsync.when(
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
-                  error: (e, _) => Center(child: Text('Etiquetas: $e')),
-                  data: (tags) => tasksAsync.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Center(child: Text('Erro: $e')),
-                    data: (tasks) {
-                      if (tasks.isEmpty) {
-                        return const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(24),
-                            child: Text(
-                              'Nenhuma tarefa neste grupo ainda.\nCrie a primeira para validar o stream!',
-                              textAlign: TextAlign.center,
-                              style:
-                                  TextStyle(color: Colors.grey, fontSize: 16),
-                            ),
-                          ),
-                        );
-                      }
-                      return PartitionedGroupTaskList(
-                        group: g,
-                        tasks: tasks,
-                        tags: tags,
-                      );
-                    },
+                  error: (e, _) => Center(child: Text('Erro: $e')),
+                  data: (tasks) => PartitionedGroupTaskList(
+                    group: g,
+                    tasks: tasks,
+                    tags: tags,
+                    listPrefix: _groupDetailScrollPrefix(
+                      context,
+                      ref,
+                      g,
+                      profilesAsync,
+                      me,
+                    ),
                   ),
                 ),
           ),
-        ],
-      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openCreateTaskForGroup(context, g),
         backgroundColor: AppTheme.brandPrimary,

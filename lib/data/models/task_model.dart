@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../utils/title_search_key.dart';
+import 'task_recurrence.dart';
 
 // Sentinel para distinguir 'não passou' de 'passou null' em copyWith
 const _unset = Object();
@@ -21,6 +22,8 @@ class TaskModel {
 
   final String? reminderType; // 'datetime' ou 'location' ou null
   final DateTime? dueDate;
+  /// Se true, [dueDate] inclui hora escolhida pelo utilizador (lembrete pontual).
+  final bool dueHasTime;
   final String? locationTrigger;
 
   final String? ownerId;
@@ -31,6 +34,8 @@ class TaskModel {
   final List<String> assigneeIds;
   /// Etiquetas do grupo (`groups/{groupId}/tags/`); vazio fora de grupo ou sem tags.
   final List<String> tagIds;
+  /// Repetição de lembrete (só relevante com `reminderType == 'datetime'`).
+  final TaskRecurrenceRule? recurrence;
 
   TaskModel({
     required this.id,
@@ -44,12 +49,14 @@ class TaskModel {
     this.isCompleted = false,
     this.reminderType,
     this.dueDate,
+    this.dueHasTime = false,
     this.locationTrigger,
     this.ownerId,
     this.groupId,
     this.createdBy,
     this.assigneeIds = const [],
     this.tagIds = const [],
+    this.recurrence,
   }) : titleSearchKey = (resolvedSearchKey != null && resolvedSearchKey.isNotEmpty)
             ? resolvedSearchKey
             : normalizeTitleSearchKey(title);
@@ -65,12 +72,14 @@ class TaskModel {
     bool? isCompleted,
     Object? reminderType = _unset,
     Object? dueDate = _unset,
+    Object? dueHasTime = _unset,
     Object? locationTrigger = _unset,
     Object? ownerId = _unset,
     Object? groupId = _unset,
     Object? createdBy = _unset,
     Object? assigneeIds = _unset,
     Object? tagIds = _unset,
+    Object? recurrence = _unset,
   }) {
     final newTitle = title ?? this.title;
     return TaskModel(
@@ -89,12 +98,18 @@ class TaskModel {
       isCompleted: isCompleted ?? this.isCompleted,
       reminderType: identical(reminderType, _unset) ? this.reminderType : reminderType as String?,
       dueDate: identical(dueDate, _unset) ? this.dueDate : dueDate as DateTime?,
+      dueHasTime: identical(dueHasTime, _unset)
+          ? this.dueHasTime
+          : dueHasTime as bool,
       locationTrigger: identical(locationTrigger, _unset) ? this.locationTrigger : locationTrigger as String?,
       ownerId: identical(ownerId, _unset) ? this.ownerId : ownerId as String?,
       groupId: identical(groupId, _unset) ? this.groupId : groupId as String?,
       createdBy: identical(createdBy, _unset) ? this.createdBy : createdBy as String?,
       assigneeIds: identical(assigneeIds, _unset) ? this.assigneeIds : assigneeIds as List<String>,
       tagIds: identical(tagIds, _unset) ? this.tagIds : tagIds as List<String>,
+      recurrence: identical(recurrence, _unset)
+          ? this.recurrence
+          : recurrence as TaskRecurrenceRule?,
     );
   }
 
@@ -111,12 +126,14 @@ class TaskModel {
       'isCompleted': isCompleted,
       'reminderType': reminderType,
       'dueDate': dueDate != null ? Timestamp.fromDate(dueDate!) : null,
+      'dueHasTime': dueHasTime,
       'locationTrigger': locationTrigger,
       'ownerId': ownerId,
       'groupId': groupId,
       'createdBy': createdBy,
       'assigneeIds': assigneeIds,
       'tagIds': tagIds,
+      'recurrence': recurrence?.toMap(),
     };
   }
 }

@@ -3,6 +3,7 @@ import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../constants/geofence_constants.dart';
 import '../../data/models/tag_model.dart';
 import '../../data/models/task_model.dart';
+import '../../data/models/task_recurrence.dart';
 import '../../data/models/user_public_profile.dart';
 import '../../utils/scheduled_badge_label.dart';
 import '../theme/app_theme.dart';
@@ -57,8 +58,11 @@ class TaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool hasLocation = task.reminderType == 'location';
     final bool hasDate = task.dueDate != null;
+    final bool hasRecurrence =
+        task.recurrence != null && task.reminderType == 'datetime';
     final bool hasAssignees = task.assigneeIds.isNotEmpty;
-    final bool showMetaRow = hasLocation || hasDate || hasAssignees;
+    final bool showMetaRow =
+        hasLocation || hasDate || hasAssignees || hasRecurrence;
 
     final int firstDayIndex =
         MaterialLocalizations.of(context).firstDayOfWeekIndex;
@@ -229,6 +233,12 @@ class TaskCard extends StatelessWidget {
                                 icon: Icons.alarm_rounded,
                                 label: scheduleData.label,
                                 color: scheduleColor,
+                              ),
+                            if (hasRecurrence && task.recurrence != null)
+                              _buildBadge(
+                                icon: Icons.repeat_rounded,
+                                label: TaskRecurrenceRule.shortLabel(task.recurrence!),
+                                color: AppTheme.brandPrimary,
                               ),
                           ],
                         )

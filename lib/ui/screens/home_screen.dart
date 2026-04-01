@@ -155,17 +155,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           content: Text('Tarefa "${task.title}" removida.'),
           action: SnackBarAction(
             label: 'Desfazer',
-            onPressed: () {
-              fs.addTask(deletedTask);
-              if (deletedTask.reminderType == 'datetime' &&
-                  deletedTask.dueDate != null) {
-                ns.scheduleTaskReminder(
-                  deletedTask.id.hashCode,
-                  deletedTask.title,
-                  deletedTask.description,
-                  deletedTask.dueDate!,
-                );
-              }
+            onPressed: () async {
+              final newId = await fs.addTask(deletedTask);
+              await ns.syncTaskDatetimeReminders(
+                deletedTask.copyWith(id: newId),
+              );
             },
           ),
           behavior: SnackBarBehavior.floating,
@@ -176,7 +170,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     await fs.deleteTask(task.id);
-    await ns.cancelNotification(task.id.hashCode);
+    await ns.cancelAllTaskReminderSlots(task.id);
   }
 
   // ── helpers de contagem ────────────────────────────────────────────────
@@ -270,11 +264,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               assigneeProfiles: assigneeProfileMap,
                               selfUid: user?.uid,
                               selfPhotoUrl: user?.photoURL,
-                              onToggle: () {
-                                ref
-                                    .read(firebaseServiceProvider)
-                                    .toggleTaskCompletion(
-                                        task.id, task.isCompleted);
+                              onToggle: () async {
+                                final fs = ref.read(firebaseServiceProvider);
+                                final ns =
+                                    ref.read(notificationServiceProvider);
+                                await fs.toggleTaskCompletion(
+                                    task.id, task.isCompleted);
+                                await ns.afterToggleTaskCompletion(task);
                               },
                               onEdit: () => _openTaskForm(task: task),
                               onDelete: () => _confirmAndDeleteTask(task),

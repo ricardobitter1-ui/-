@@ -4,6 +4,9 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 
+import '../../business_logic/recurrence_calculator.dart';
+import '../models/task_model.dart';
+
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
 });
@@ -11,6 +14,17 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
 class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
+
+  /// Slots por tarefa (iOS ~64 agendadas no total; manter margem).
+  static const int kTaskNotificationSlots = 48;
+
+  /// Base estável para IDs derivados de [taskId] (positivo, espaço para +kTaskNotificationSlots).
+  static int taskNotificationBaseId(String taskId) {
+    if (taskId.isEmpty) return 1;
+    var h = taskId.hashCode;
+    if (h < 0) h = -h;
+    return h % 2000000000;
+  }
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -142,7 +156,85 @@ class NotificationService {
 
   /// Cancela uma notificação agendada específica
   Future<void> cancelNotification(int id) async {
+    await initialize();
     await _plugin.cancel(id: id);
     print('DEBUG NOTIF: Notificação $id cancelada.');
+  }
+
+  /// Remove todos os lembretes de data/hora associados a uma tarefa (incl. série recorrente).
+  Future<void> cancelAllTaskReminderSlots(String taskId) async {
+    await initialize();
+    final base = taskNotificationBaseId(taskId);
+    for (var i = 0; i < kTaskNotificationSlots; i++) {
+      await _plugin.cancel(id: base + i);
+    }
+  }
+
+  /// Agenda lembretes conforme [task] (datetime + opcional recorrência) ou cancela slots.
+  Future<void> syncTaskDatetimeReminders(TaskModel task) async {
+    await cancelAllTaskReminderSlots(task.id);
+    if (task.id.isEmpty) return;
+    if (task.isCompleted) return;
+    if (task.reminderType != 'datetime') return;
+    if (task.dueDate == null) return;
+
+    final body = task.description.trim().isEmpty
+        ? 'Hora de completar sua tarefa!'
+        : task.description;
+
+    final base = taskNotificationBaseId(task.id);
+    final now = DateTime.now();
+
+    if (task.recurrence != null) {
+      final rule = task.recurrence!;
+      final anchor = task.dueDate!;
+      final dh = task.dueHasTime ? anchor.hour : null;
+      final dm = task.dueHasTime ? anchor.minute : null;
+      final times = RecurrenceCalculator.upcomingOccurrences(
+        anchorDate: anchor,
+        rule: rule,
+        from: now,
+        dueTimeHour: dh,
+        dueTimeMinute: dm,
+        maxCount: kTaskNotificationSlots,
+      );
+      var slot = 0;
+      for (final t in times) {
+        if (slot >= kTaskNotificationSlots) break;
+        final hasTime = rule.repeatHour != null ||
+            task.dueHasTime ||
+            t.hour != 0 ||
+            t.minute != 0;
+        if (!hasTime) continue;
+        try {
+          await scheduleTaskReminder(base + slot, task.title, body, t);
+        } catch (e) {
+          print('DEBUG NOTIF: falha ao agendar slot $slot: $e');
+        }
+        slot++;
+      }
+      return;
+    }
+
+    if (!task.dueHasTime) return;
+    final due = task.dueDate!;
+    if (due.isBefore(now)) return;
+    try {
+      await scheduleTaskReminder(base, task.title, body, due);
+    } catch (e) {
+      print('DEBUG NOTIF: falha lembrete pontual: $e');
+    }
+  }
+
+  /// Chamar após [FirebaseService.toggleTaskCompletion] com o estado da tarefa **antes** do toque.
+  Future<void> afterToggleTaskCompletion(TaskModel taskBeforeToggle) async {
+    if (taskBeforeToggle.id.isEmpty) return;
+    if (!taskBeforeToggle.isCompleted) {
+      await cancelAllTaskReminderSlots(taskBeforeToggle.id);
+    } else {
+      await syncTaskDatetimeReminders(
+        taskBeforeToggle.copyWith(isCompleted: false),
+      );
+    }
   }
 }
