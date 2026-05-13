@@ -67,7 +67,7 @@ class NotificationService {
     AndroidNotificationAction(
       kActionComplete,
       'Concluir',
-      showsUserInterface: true,
+      showsUserInterface: false,
     ),
     AndroidNotificationAction(
       kActionReschedule,
@@ -97,7 +97,10 @@ class NotificationService {
     );
   }
 
-  Future<void> initialize() async {
+  Future<void> initialize({
+    DidReceiveBackgroundNotificationResponseCallback?
+        onDidReceiveBackgroundNotificationResponse,
+  }) async {
     if (_isInitialized) return;
 
     tz.initializeTimeZones();
@@ -120,7 +123,6 @@ class NotificationService {
                 DarwinNotificationAction.plain(
                   kActionComplete,
                   'Concluir',
-              options: {DarwinNotificationActionOption.foreground},
                 ),
                 DarwinNotificationAction.plain(
                   kActionReschedule,
@@ -149,6 +151,8 @@ class NotificationService {
           _responseController.add(details);
         }
       },
+      onDidReceiveBackgroundNotificationResponse:
+          onDidReceiveBackgroundNotificationResponse,
     );
     _isInitialized = true;
     print('DEBUG NOTIF: Motor de notificações inicializado.');

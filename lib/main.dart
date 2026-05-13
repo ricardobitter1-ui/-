@@ -7,6 +7,7 @@ import 'firebase_options.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'app_navigator.dart';
 import 'data/services/notification_service.dart';
+import 'data/services/task_reminder_notification_background.dart';
 import 'ui/widgets/auth_wrapper.dart';
 import 'ui/theme/app_theme.dart';
 
@@ -22,7 +23,10 @@ void main() async {
   );
 
   final notificationService = NotificationService();
-  await notificationService.initialize();
+  await notificationService.initialize(
+    onDidReceiveBackgroundNotificationResponse:
+        taskReminderNotificationBackground,
+  );
   await notificationService.loadAppLaunchNotification();
 
   runApp(

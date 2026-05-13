@@ -70,7 +70,7 @@ class _TaskNotificationCoordinatorState
     if (taskId == null) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _process(taskId, response.actionId);
+      _process(response);
     });
   }
 
@@ -80,8 +80,12 @@ class _TaskNotificationCoordinatorState
     ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _process(String taskId, String? actionId) async {
+  Future<void> _process(NotificationResponse response) async {
     if (!mounted) return;
+
+    final taskId = NotificationService.parseTaskIdFromPayload(response.payload);
+    if (taskId == null) return;
+    final actionId = response.actionId;
 
     final fs = ref.read(firebaseServiceProvider);
     final ns = ref.read(notificationServiceProvider);
@@ -91,12 +95,16 @@ class _TaskNotificationCoordinatorState
       if (!mounted) return;
       if (task == null) {
         _snack('Tarefa não encontrada.');
+        final nid = response.id;
+        if (nid != null) await ns.cancelNotification(nid);
         return;
       }
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       if (isOccurrenceCompletedOnCalendarDay(task, today)) {
         _snack('Tarefa já concluída.');
+        final nid = response.id;
+        if (nid != null) await ns.cancelNotification(nid);
         return;
       }
       await completeTaskToggle(
@@ -105,6 +113,8 @@ class _TaskNotificationCoordinatorState
         task: task,
         occurrenceCalendarDay: today,
       );
+      final nid = response.id;
+      if (nid != null) await ns.cancelNotification(nid);
       if (!mounted) return;
       _snack('Tarefa concluída.');
       return;
