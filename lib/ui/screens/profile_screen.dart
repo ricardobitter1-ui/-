@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../business_logic/providers/group_provider.dart';
+import '../../business_logic/providers/task_provider.dart';
+import '../../data/local/pending_reminder_prefs.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
+import '../../data/services/notification_service.dart';
 import '../widgets/custom_avatar.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -15,13 +18,30 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  int _pendingReminderRepeatMinutes = kDefaultPendingReminderRepeatMinutes;
+  bool _isLoadingPendingReminderPrefs = true;
+  bool _isSavingPendingReminderPrefs = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPendingReminderPrefs();
+  }
+
+  Future<void> _loadPendingReminderPrefs() async {
+    final minutes = await loadPendingReminderRepeatMinutes();
+    if (!mounted) return;
+    setState(() {
+      _pendingReminderRepeatMinutes = minutes;
+      _isLoadingPendingReminderPrefs = false;
+    });
+  }
+
   Future<void> _editDisplayName() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final ctrl = TextEditingController(
-      text: user.displayName?.trim() ?? '',
-    );
+    final ctrl = TextEditingController(text: user.displayName?.trim() ?? '');
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -61,9 +81,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       await ref.read(firebaseServiceProvider).upsertCurrentUserProfile();
       ref.invalidate(authStateProvider);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nome atualizado.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Nome atualizado.')));
       }
     } catch (e) {
       if (mounted) {
@@ -75,6 +95,117 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         );
       }
     }
+  }
+
+  Future<void> _savePendingReminderRepeatMinutes(int minutes) async {
+    if (_isSavingPendingReminderPrefs ||
+        minutes == _pendingReminderRepeatMinutes) {
+      return;
+    }
+
+    setState(() {
+      _pendingReminderRepeatMinutes = minutes;
+      _isSavingPendingReminderPrefs = true;
+    });
+
+    try {
+      await savePendingReminderRepeatMinutes(minutes);
+
+      final ns = ref.read(notificationServiceProvider);
+      final tasks = ref
+          .read(tasksStreamProvider)
+          .maybeWhen(data: (tasks) => tasks, orElse: () => const []);
+      for (final task in tasks.where((t) => t.reminderType == 'datetime')) {
+        await ns.syncTaskDatetimeReminders(task);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Configuração de lembretes atualizada.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao atualizar lembretes: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingPendingReminderPrefs = false);
+      }
+    }
+  }
+
+  Widget _buildPendingReminderSettings(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final isBusy =
+        _isLoadingPendingReminderPrefs || _isSavingPendingReminderPrefs;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.notifications_active_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Lembretes pendentes',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (isBusy)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Repetir a notificação enquanto a tarefa agendada não for concluída.',
+              style: textTheme.bodySmall?.copyWith(color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<int>(
+              key: ValueKey(_pendingReminderRepeatMinutes),
+              initialValue: _pendingReminderRepeatMinutes,
+              decoration: const InputDecoration(labelText: 'Repetir a cada'),
+              items: kPendingReminderRepeatMinuteOptions
+                  .map(
+                    (minutes) => DropdownMenuItem<int>(
+                      value: minutes,
+                      child: Text(pendingReminderRepeatLabel(minutes)),
+                    ),
+                  )
+                  .toList(),
+              onChanged: isBusy
+                  ? null
+                  : (minutes) {
+                      if (minutes == null) return;
+                      _savePendingReminderRepeatMinutes(minutes);
+                    },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -128,15 +259,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             label: const Text('Alterar nome a mostrar'),
           ),
           const SizedBox(height: 24),
+          _buildPendingReminderSettings(context),
+          const SizedBox(height: 24),
           if (!hasEmail)
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Text(
                 'Convites por e-mail requerem sessão com e-mail (Google ou e-mail/palavra-passe).',
-                style: TextStyle(
-                  color: Colors.amber.shade900,
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: Colors.amber.shade900, fontSize: 13),
               ),
             ),
           invitesAsync.when(
@@ -150,8 +280,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   Text(
                     'Convites pendentes',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   ...invites.map(
@@ -189,8 +319,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                           .declineInviteByDocId(inv.id);
                                     } catch (e) {
                                       if (context.mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
                                             content: Text('Erro: $e'),
                                             backgroundColor: Colors.redAccent,
@@ -209,19 +340,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                           .read(firebaseServiceProvider)
                                           .acceptInviteByDocId(inv.id);
                                       if (context.mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           const SnackBar(
-                                            content: Text(
-                                              'Entrou no grupo.',
-                                            ),
+                                            content: Text('Entrou no grupo.'),
                                           ),
                                         );
                                       }
                                     } catch (e) {
                                       if (context.mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
                                             content: Text('Erro: $e'),
                                             backgroundColor: Colors.redAccent,

@@ -9,6 +9,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 
 import '../../business_logic/recurrence_calculator.dart';
 import '../../utils/calendar_day_key.dart';
+import '../local/pending_reminder_prefs.dart';
 import '../models/task_model.dart';
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
@@ -16,7 +17,8 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
 });
 
 class NotificationService {
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
 
   final StreamController<NotificationResponse> _responseController =
@@ -25,7 +27,8 @@ class NotificationService {
   NotificationResponse? _appLaunchNotification;
 
   /// Respostas a toques na notificação ou nos botões (app em memória).
-  Stream<NotificationResponse> get notificationResponses => _responseController.stream;
+  Stream<NotificationResponse> get notificationResponses =>
+      _responseController.stream;
 
   static const String kCategoryTaskReminder = 'task_reminder';
   static const String kActionComplete = 'action_complete';
@@ -78,7 +81,8 @@ class NotificationService {
       android: AndroidNotificationDetails(
         'task_channel_id_v2',
         'Lembretes de Tarefas',
-        channelDescription: 'Canal principal para alertas de tarefas no horário agendado.',
+        channelDescription:
+            'Canal principal para alertas de tarefas no horário agendado.',
         importance: Importance.max,
         priority: Priority.high,
         showWhen: true,
@@ -86,9 +90,7 @@ class NotificationService {
         enableVibration: true,
         actions: kTaskReminderAndroidActions,
       ),
-      iOS: DarwinNotificationDetails(
-        categoryIdentifier: kCategoryTaskReminder,
-      ),
+      iOS: DarwinNotificationDetails(categoryIdentifier: kCategoryTaskReminder),
       macOS: DarwinNotificationDetails(
         categoryIdentifier: kCategoryTaskReminder,
       ),
@@ -108,38 +110,41 @@ class NotificationService {
 
     final DarwinInitializationSettings initializationSettingsDarwin =
         DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-      notificationCategories: [
-        DarwinNotificationCategory(
-          kCategoryTaskReminder,
-          actions: [
-            DarwinNotificationAction.plain(
-              kActionComplete,
-              'Concluir',
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+          notificationCategories: [
+            DarwinNotificationCategory(
+              kCategoryTaskReminder,
+              actions: [
+                DarwinNotificationAction.plain(
+                  kActionComplete,
+                  'Concluir',
               options: {DarwinNotificationActionOption.foreground},
-            ),
-            DarwinNotificationAction.plain(
-              kActionReschedule,
-              'Reprogramar',
-              options: {DarwinNotificationActionOption.foreground},
+                ),
+                DarwinNotificationAction.plain(
+                  kActionReschedule,
+                  'Reprogramar',
+                  options: {DarwinNotificationActionOption.foreground},
+                ),
+              ],
             ),
           ],
-        ),
-      ],
-    );
+        );
 
-    final InitializationSettings initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-      iOS: initializationSettingsDarwin,
-      macOS: initializationSettingsDarwin,
-    );
+    final InitializationSettings initializationSettings =
+        InitializationSettings(
+          android: initializationSettingsAndroid,
+          iOS: initializationSettingsDarwin,
+          macOS: initializationSettingsDarwin,
+        );
 
     await _plugin.initialize(
       settings: initializationSettings,
       onDidReceiveNotificationResponse: (details) {
-        print('DEBUG NOTIF: Resposta: id=${details.id} actionId=${details.actionId}');
+        print(
+          'DEBUG NOTIF: Resposta: id=${details.id} actionId=${details.actionId}',
+        );
         if (!_responseController.isClosed) {
           _responseController.add(details);
         }
@@ -168,7 +173,10 @@ class NotificationService {
 
   Future<bool> hasPermission() async {
     final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
-        _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        _plugin
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin
+            >();
 
     final bool? result = await androidImplementation?.areNotificationsEnabled();
     return result ?? false;
@@ -176,16 +184,23 @@ class NotificationService {
 
   Future<bool> hasAlarmPermission() async {
     final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
-        _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        _plugin
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin
+            >();
 
-    final bool? result = await androidImplementation?.canScheduleExactNotifications();
+    final bool? result = await androidImplementation
+        ?.canScheduleExactNotifications();
     print('DEBUG NOTIF: Permissão de alarme exato: $result');
     return result ?? false;
   }
 
   Future<void> requestPermission() async {
     final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
-        _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        _plugin
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin
+            >();
 
     print('DEBUG NOTIF: Solicitando permissões POST_NOTIFICATIONS...');
     await androidImplementation?.requestNotificationsPermission();
@@ -204,7 +219,9 @@ class NotificationService {
     await initialize();
 
     final now = DateTime.now();
-    print('DEBUG NOTIF: Tentando agendar ID: $id para $scheduledTime (Agora: $now)');
+    print(
+      'DEBUG NOTIF: Tentando agendar ID: $id para $scheduledTime (Agora: $now)',
+    );
 
     if (scheduledTime.isBefore(now)) {
       print('DEBUG NOTIF: FALHA - Horário agendado está no passado.');
@@ -213,11 +230,15 @@ class NotificationService {
 
     final hasAlarmPerm = await hasAlarmPermission();
     if (!hasAlarmPerm) {
-      print('DEBUG NOTIF: AVISO - Sem permissão de Alarme Exato. O agendamento pode falhar ou atrasar.');
+      print(
+        'DEBUG NOTIF: AVISO - Sem permissão de Alarme Exato. O agendamento pode falhar ou atrasar.',
+      );
     }
 
     final tzScheduledDate = tz.TZDateTime.from(scheduledTime, tz.local);
-    print('DEBUG NOTIF: Agendando TZDateTime: $tzScheduledDate no local: ${tz.local.name}');
+    print(
+      'DEBUG NOTIF: Agendando TZDateTime: $tzScheduledDate no local: ${tz.local.name}',
+    );
 
     final payload = taskId.isEmpty ? null : reminderPayload(taskId);
 
@@ -240,14 +261,17 @@ class NotificationService {
 
   Future<void> testImmediateNotification() async {
     await initialize();
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'task_channel_id_v2',
-      'Test Channel',
-      channelDescription: 'Canal de teste para verificar notificações.',
-      importance: Importance.max,
-      priority: Priority.high,
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'task_channel_id_v2',
+          'Test Channel',
+          channelDescription: 'Canal de teste para verificar notificações.',
+          importance: Importance.max,
+          priority: Priority.high,
+        );
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
     );
-    const NotificationDetails details = NotificationDetails(android: androidDetails);
 
     final now = DateTime.now();
     final testTime = now.add(const Duration(seconds: 5));
@@ -281,6 +305,61 @@ class NotificationService {
     }
   }
 
+  DateTime? _nextRepeatAfter(
+    DateTime startTime,
+    DateTime now,
+    Duration repeatInterval,
+  ) {
+    if (repeatInterval.inMilliseconds <= 0) return null;
+    if (!startTime.isBefore(now)) return startTime;
+
+    final elapsedMs = now.difference(startTime).inMilliseconds;
+    final intervalsElapsed = elapsedMs ~/ repeatInterval.inMilliseconds;
+    return startTime.add(repeatInterval * (intervalsElapsed + 1));
+  }
+
+  Future<int> _schedulePendingReminderSeries({
+    required int baseId,
+    required int startSlot,
+    required int maxSlots,
+    required String title,
+    required String body,
+    required DateTime startTime,
+    required String taskId,
+    required DateTime now,
+    required Duration? repeatInterval,
+    DateTime? untilExclusive,
+  }) async {
+    var slot = startSlot;
+    DateTime? nextTime;
+
+    if (repeatInterval == null) {
+      nextTime = startTime.isBefore(now) ? null : startTime;
+    } else {
+      nextTime = _nextRepeatAfter(startTime, now, repeatInterval);
+    }
+
+    while (nextTime != null && slot < maxSlots) {
+      if (untilExclusive != null && !nextTime.isBefore(untilExclusive)) break;
+      try {
+        await scheduleTaskReminder(
+          baseId + slot,
+          title,
+          body,
+          nextTime,
+          taskId,
+        );
+      } catch (e) {
+        print('DEBUG NOTIF: falha ao agendar slot $slot: $e');
+      }
+      slot++;
+      if (repeatInterval == null) break;
+      nextTime = nextTime.add(repeatInterval);
+    }
+
+    return slot;
+  }
+
   /// Agenda lembretes conforme [task] (datetime + opcional recorrência) ou cancela slots.
   Future<void> syncTaskDatetimeReminders(TaskModel task) async {
     await cancelAllTaskReminderSlots(task.id);
@@ -295,6 +374,7 @@ class NotificationService {
 
     final base = taskNotificationBaseId(task.id);
     final now = DateTime.now();
+    final repeatInterval = await loadPendingReminderRepeatInterval();
 
     if (task.recurrence != null) {
       final rule = task.recurrence!;
@@ -308,35 +388,65 @@ class NotificationService {
         dueTimeHour: dh,
         dueTimeMinute: dm,
         maxCount: kTaskNotificationSlots,
-      );
+      ).toList();
+
+      if (repeatInterval != null) {
+        final today = DateTime(now.year, now.month, now.day);
+        final todayOccurrence =
+            RecurrenceCalculator.occurrenceInstantOnCalendarDay(
+              anchorDate: anchor,
+              rule: rule,
+              calendarDay: today,
+              dueTimeHour: dh,
+              dueTimeMinute: dm,
+            );
+        if (todayOccurrence != null && todayOccurrence.isBefore(now)) {
+          times.insert(0, todayOccurrence);
+        }
+      }
+
       var slot = 0;
-      for (final t in times) {
+      for (var i = 0; i < times.length; i++) {
         if (slot >= kTaskNotificationSlots) break;
+        final t = times[i];
         final occKey = localCalendarDayKey(t);
         if (task.completedOccurrenceDateKeys.contains(occKey)) continue;
-        final hasTime = rule.repeatHour != null ||
+        final hasTime =
+            rule.repeatHour != null ||
             task.dueHasTime ||
             t.hour != 0 ||
             t.minute != 0;
         if (!hasTime) continue;
-        try {
-          await scheduleTaskReminder(base + slot, task.title, body, t, task.id);
-        } catch (e) {
-          print('DEBUG NOTIF: falha ao agendar slot $slot: $e');
-        }
-        slot++;
+        final nextOccurrence = i + 1 < times.length ? times[i + 1] : null;
+        slot = await _schedulePendingReminderSeries(
+          baseId: base,
+          startSlot: slot,
+          maxSlots: kTaskNotificationSlots,
+          title: task.title,
+          body: body,
+          startTime: t,
+          taskId: task.id,
+          now: now,
+          repeatInterval: repeatInterval,
+          untilExclusive: nextOccurrence,
+        );
       }
       return;
     }
 
     if (!task.dueHasTime) return;
     final due = task.dueDate!;
-    if (due.isBefore(now)) return;
-    try {
-      await scheduleTaskReminder(base, task.title, body, due, task.id);
-    } catch (e) {
-      print('DEBUG NOTIF: falha lembrete pontual: $e');
-    }
+    await _schedulePendingReminderSeries(
+      baseId: base,
+      startSlot: 0,
+      maxSlots: kTaskNotificationSlots,
+      title: task.title,
+      body: body,
+      startTime: due,
+      taskId: task.id,
+      now: now,
+      repeatInterval: repeatInterval,
+    );
   }
 
   /// Chamar após [FirebaseService.toggleTaskCompletion] com o estado da tarefa **antes** do toque.
