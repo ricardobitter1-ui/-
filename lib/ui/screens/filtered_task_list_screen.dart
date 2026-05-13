@@ -20,9 +20,11 @@ import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
+import '../widgets/expandable_create_task_fab.dart';
 import '../widgets/task_appear_motion.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_form_modal.dart';
+import '../widgets/voice_task_recording_sheet.dart';
 
 enum TaskFilterType { today, scheduled, all, overdue }
 
@@ -163,6 +165,14 @@ class _FilteredTaskListScreenState
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) => TaskFormModal(initialTask: task),
+    );
+  }
+
+  void _openVoiceTaskRecording() {
+    final groups = ref.read(groupsStreamProvider).value ?? const [];
+    showVoiceTaskRecordingSheet(
+      context: context,
+      groups: groups,
     );
   }
 
@@ -402,10 +412,9 @@ class _FilteredTaskListScreenState
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openTaskForm(),
-        tooltip: 'Nova tarefa',
-        child: const Icon(Icons.add, size: 28),
+      floatingActionButton: ExpandableCreateTaskFab(
+        onWrite: () => _openTaskForm(),
+        onDictate: _openVoiceTaskRecording,
       ),
     );
   }

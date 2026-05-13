@@ -10,14 +10,15 @@ import '../../data/models/group_model.dart';
 import '../../data/models/user_public_profile.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
-import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
 import '../theme/group_icon.dart';
 import '../widgets/custom_avatar.dart';
 import '../widgets/edit_group_sheet.dart';
 import '../widgets/group_tag_name_color_dialog.dart';
+import '../widgets/expandable_create_task_fab.dart';
 import '../widgets/partitioned_group_task_list.dart';
 import '../widgets/task_form_modal.dart';
+import '../widgets/voice_task_recording_sheet.dart';
 
 void _openManageGroupTags(
   BuildContext context,
@@ -222,6 +223,16 @@ class GroupDetailScreen extends ConsumerWidget {
         forcedGroupId: g.id,
         collaborationGroup: g,
       ),
+    );
+  }
+
+  void _openVoiceForGroup(BuildContext context, WidgetRef ref, GroupModel g) {
+    final groups = ref.read(groupsStreamProvider).value ?? const [];
+    showVoiceTaskRecordingSheet(
+      context: context,
+      groups: groups,
+      forcedGroupId: g.id,
+      contextGroup: g,
     );
   }
 
@@ -673,10 +684,9 @@ class GroupDetailScreen extends ConsumerWidget {
                   ),
                 ),
           ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openCreateTaskForGroup(context, g),
-        backgroundColor: AppTheme.brandPrimary,
-        child: const Icon(Icons.add),
+      floatingActionButton: ExpandableCreateTaskFab(
+        onWrite: () => _openCreateTaskForGroup(context, g),
+        onDictate: () => _openVoiceForGroup(context, ref, g),
       ),
     );
   }

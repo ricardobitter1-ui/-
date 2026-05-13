@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../business_logic/complete_task_action.dart';
 import '../../business_logic/overdue_occurrences.dart';
+import '../../business_logic/providers/group_provider.dart';
 import '../../business_logic/providers/task_provider.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../business_logic/task_day_visibility.dart';
@@ -12,9 +13,11 @@ import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/expandable_create_task_fab.dart';
 import '../widgets/task_appear_motion.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_form_modal.dart';
+import '../widgets/voice_task_recording_sheet.dart';
 import 'filtered_task_list_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -117,6 +120,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) => TaskFormModal(initialTask: task),
+    );
+  }
+
+  void _openVoiceTaskRecording() {
+    final groups = ref.read(groupsStreamProvider).value ?? const [];
+    showVoiceTaskRecordingSheet(
+      context: context,
+      groups: groups,
     );
   }
 
@@ -306,10 +317,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           },
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openTaskForm(),
-        tooltip: 'Nova tarefa',
-        child: const Icon(Icons.add, size: 28),
+      floatingActionButton: ExpandableCreateTaskFab(
+        onWrite: () => _openTaskForm(),
+        onDictate: _openVoiceTaskRecording,
       ),
     );
   }
