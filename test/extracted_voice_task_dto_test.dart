@@ -28,6 +28,13 @@ void main() {
       expect(list.single.groupName, isNull);
     });
 
+    test('parses optional tagName from JSON', () {
+      const raw =
+          '{"tasks":[{"title":"Leite","tagName":"Laticínios","groupName":null}]}';
+      final list = ExtractedVoiceTaskDto.parseTasksJson(raw);
+      expect(list.single.tagName, 'Laticínios');
+    });
+
     test('strips markdown fences if model wraps output', () {
       const raw = '```json\n{"tasks":[{"title":"X","description":"","date":null,"time":null,"groupName":null}]}\n```';
       final list = ExtractedVoiceTaskDto.parseTasksJson(raw);

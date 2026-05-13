@@ -7,6 +7,8 @@ class ExtractedVoiceTaskDto {
   final String? date;
   final String? time;
   final String? groupName;
+  /// Nome da etiqueta do grupo (fase 2 LLM); deve coincidir com uma tag existente.
+  final String? tagName;
 
   const ExtractedVoiceTaskDto({
     required this.title,
@@ -14,7 +16,26 @@ class ExtractedVoiceTaskDto {
     this.date,
     this.time,
     this.groupName,
+    this.tagName,
   });
+
+  ExtractedVoiceTaskDto copyWith({
+    String? title,
+    String? description,
+    String? date,
+    String? time,
+    String? groupName,
+    String? tagName,
+  }) {
+    return ExtractedVoiceTaskDto(
+      title: title ?? this.title,
+      description: description ?? this.description,
+      date: date ?? this.date,
+      time: time ?? this.time,
+      groupName: groupName ?? this.groupName,
+      tagName: tagName ?? this.tagName,
+    );
+  }
 
   static List<ExtractedVoiceTaskDto> parseTasksJson(String raw) {
     final decoded = _decodeJsonObject(raw);
@@ -35,6 +56,7 @@ class ExtractedVoiceTaskDto {
           date: _nullableString(m['date'] ?? m['data']),
           time: _nullableString(m['time'] ?? m['hora']),
           groupName: _nullableString(m['groupName'] ?? m['grupo']),
+          tagName: _nullableString(m['tagName'] ?? m['tag']),
         ),
       );
     }

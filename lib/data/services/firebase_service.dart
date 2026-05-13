@@ -335,6 +335,30 @@ class FirebaseService {
     });
   }
 
+  /// Leitura única de etiquetas do grupo (ex.: ditado com classificação por tag).
+  Future<List<TagModel>> fetchGroupTagsOnce(String groupId) async {
+    if (uid == null) return [];
+    final gid = groupId.trim();
+    if (gid.isEmpty) return [];
+    final snap = await _groupsCollection.doc(gid).collection('tags').get();
+    final list = snap.docs
+        .map((d) => TagModel.fromDoc(d, groupId: gid))
+        .toList()
+      ..sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+    return list;
+  }
+
+  /// Leitura única de tarefas do grupo (deduplicação no ditado).
+  Future<List<TaskModel>> fetchTasksByGroupOnce(String groupId) async {
+    if (uid == null) return [];
+    final gid = groupId.trim();
+    if (gid.isEmpty) return [];
+    final snap = await _tasksCollection.where('groupId', isEqualTo: gid).get();
+    return snap.docs.map(_taskFromDoc).toList();
+  }
+
   /// Etiquetas de outros grupos do utilizador (ex.: sugestões), com dedupe por nome+cor.
   Future<List<TagModel>> fetchSuggestionTagsExcludingGroup(
     String currentGroupId,

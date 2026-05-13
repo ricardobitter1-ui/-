@@ -7,7 +7,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
+import '../../business_logic/voice_task_group_resolver.dart';
 import '../../data/models/group_model.dart';
+import '../../data/models/tag_model.dart';
+import '../../data/models/task_model.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../../data/services/voice_api_config.dart';
@@ -188,7 +191,6 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
         groups: widget.groups,
         contextGroupName: ctxName,
       );
-      pipeline.dispose();
       if (extraction.tasks.isEmpty) {
         setState(() {
           _processing = false;
@@ -197,24 +199,58 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
         try {
           await file.delete();
         } catch (_) {}
+        pipeline.dispose();
         return;
       }
 
       final fs = ref.read(firebaseServiceProvider);
       final ns = ref.read(notificationServiceProvider);
-      final n = await persistExtractedVoiceTasks(
-        dtos: extraction.tasks,
+
+      final distinctGids = <String>{};
+      for (final dto in extraction.tasks) {
+        final gid = resolveGroupId(
+          groupNameFromLlm: dto.groupName,
+          groups: widget.groups,
+          forcedGroupId: widget.forcedGroupId,
+        );
+        if (gid != null && gid.isNotEmpty) distinctGids.add(gid);
+      }
+
+      final tagsByGroupId = <String, List<TagModel>>{};
+      final tasksByGroupId = <String, List<TaskModel>>{};
+      for (final gid in distinctGids) {
+        tagsByGroupId[gid] = await fs.fetchGroupTagsOnce(gid);
+        tasksByGroupId[gid] = await fs.fetchTasksByGroupOnce(gid);
+      }
+
+      final enriched = await pipeline.enrichExtractedVoiceTasksWithTagAssignments(
+        tasks: extraction.tasks,
+        groups: widget.groups,
+        forcedGroupId: widget.forcedGroupId,
+        tagsByGroupId: tagsByGroupId,
+        transcript: extraction.transcript,
+      );
+
+      final stats = await persistExtractedVoiceTasksWithDedup(
+        dtos: enriched,
         groups: widget.groups,
         forcedGroupId: widget.forcedGroupId,
         firebase: fs,
         notification: ns,
+        existingTasksByGroupId: tasksByGroupId,
+        tagsByGroupId: tagsByGroupId,
       );
+      pipeline.dispose();
       try {
         await file.delete();
       } catch (_) {}
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
-      final msg = n == 1 ? '1 tarefa criada.' : '$n tarefas criadas.';
+      final parts = <String>[];
+      if (stats.created > 0) parts.add('${stats.created} nova(s)');
+      if (stats.reopened > 0) parts.add('${stats.reopened} reaberta(s)');
+      final msg =
+          parts.isEmpty ? 'Nada a gravar.' : '${parts.join(', ')}.';
       messenger.showSnackBar(SnackBar(content: Text(msg)));
       Navigator.of(context).pop();
     } catch (e) {
