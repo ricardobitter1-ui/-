@@ -7,8 +7,27 @@ bool _sameCalendarDay(DateTime a, DateTime b) =>
 bool _isTodayAt(DateTime d, DateTime now) =>
     d.year == now.year && d.month == now.month && d.day == now.day;
 
+bool _noGroup(TaskModel t) {
+  final id = t.groupId?.trim();
+  return id == null || id.isEmpty;
+}
+
+/// Inbox pessoal: sem data e fora de grupo; aparece em "Hoje" só no dia civil atual.
+bool _personalInboxUndatedVisibleOnDay(
+  TaskModel t,
+  DateTime day, {
+  required DateTime now,
+}) {
+  if (t.dueDate != null || !_noGroup(t)) return false;
+  final today = DateTime(now.year, now.month, now.day);
+  return _sameCalendarDay(day, today);
+}
+
 /// Tarefa com data visível no dia civil [day] (lista "Hoje" / timeline).
-bool taskVisibleOnDay(TaskModel t, DateTime day) {
+/// [now] só para testes; fora de testes usa o relógio do dispositivo.
+bool taskVisibleOnDay(TaskModel t, DateTime day, {DateTime? now}) {
+  final clock = now ?? DateTime.now();
+  if (_personalInboxUndatedVisibleOnDay(t, day, now: clock)) return true;
   if (t.dueDate == null) return false;
   if (t.reminderType == 'datetime' && t.recurrence != null) {
     final anchor = t.dueDate!;

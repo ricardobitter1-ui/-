@@ -9,6 +9,7 @@ TaskModel _task({
   String? reminderType,
   bool dueHasTime = false,
   TaskRecurrenceRule? recurrence,
+  String? groupId,
 }) {
   return TaskModel(
     id: id,
@@ -18,6 +19,7 @@ TaskModel _task({
     reminderType: reminderType,
     dueHasTime: dueHasTime,
     recurrence: recurrence,
+    groupId: groupId,
   );
 }
 
@@ -49,9 +51,27 @@ void main() {
       expect(taskVisibleOnDay(t, DateTime(2026, 4, 3)), isTrue);
     });
 
-    test('sem dueDate não aparece', () {
+    test('sem dueDate: pessoal (sem grupo) aparece só no dia atual', () {
+      final clock = DateTime(2026, 4, 1, 10, 0);
       final t = _task(id: '3', reminderType: 'datetime');
-      expect(taskVisibleOnDay(t, DateTime(2026, 4, 1)), isFalse);
+      expect(
+        taskVisibleOnDay(t, DateTime(2026, 4, 1), now: clock),
+        isTrue,
+      );
+      expect(
+        taskVisibleOnDay(t, DateTime(2026, 4, 2), now: clock),
+        isFalse,
+      );
+    });
+
+    test('sem dueDate em grupo não entra em Hoje por inbox', () {
+      final clock = DateTime(2026, 4, 1, 10, 0);
+      final t = _task(
+        id: '3b',
+        reminderType: 'datetime',
+        groupId: 'g1',
+      );
+      expect(taskVisibleOnDay(t, DateTime(2026, 4, 1), now: clock), isFalse);
     });
   });
 

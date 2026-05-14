@@ -16,7 +16,7 @@ Future<bool> completeTaskToggle({
     final now = DateTime.now();
     final day = occurrenceCalendarDay ??
         DateTime(now.year, now.month, now.day);
-    if (!taskVisibleOnDay(task, day)) {
+    if (!taskVisibleOnDay(task, day, now: now)) {
       return false;
     }
     final key = localCalendarDayKey(day);
