@@ -17,6 +17,44 @@ void taskReminderNotificationBackground(NotificationResponse response) {
   unawaited(_taskReminderNotificationBackgroundImpl(response));
 }
 
+Future<bool> _ensureFirebaseForBackgroundIsolate() async {
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    return true;
+  } on FirebaseException catch (e) {
+    if (e.code == 'duplicate-app') return true;
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// No isolate de notificação, [currentUser] costuma vir `null` até a sessão
+/// ser lida do disco; não confiar só na primeira leitura síncrona.
+Future<String?> _waitForSignedInUid({
+  Duration timeout = const Duration(seconds: 12),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null && uid.isNotEmpty) return uid;
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+  }
+  try {
+    final user = await FirebaseAuth.instance
+        .authStateChanges()
+        .where((u) => u != null)
+        .cast<User>()
+        .timeout(const Duration(seconds: 2))
+        .first;
+    return user.uid;
+  } on TimeoutException {
+    return FirebaseAuth.instance.currentUser?.uid;
+  }
+}
+
 Future<void> _taskReminderNotificationBackgroundImpl(
   NotificationResponse response,
 ) async {
@@ -24,16 +62,11 @@ Future<void> _taskReminderNotificationBackgroundImpl(
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  } catch (_) {
-    return;
-  }
+  final ok = await _ensureFirebaseForBackgroundIsolate();
+  if (!ok) return;
 
-  final uid = FirebaseAuth.instance.currentUser?.uid;
-  if (uid == null) return;
+  final uid = await _waitForSignedInUid();
+  if (uid == null || uid.isEmpty) return;
 
   final fs = FirebaseService(uid);
   final ns = NotificationService();
