@@ -18,7 +18,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  int _pendingReminderRepeatMinutes = kDefaultPendingReminderRepeatMinutes;
+  int _pendingReminderRepeatSeconds = kDefaultPendingReminderRepeatSeconds;
   bool _isLoadingPendingReminderPrefs = true;
   bool _isSavingPendingReminderPrefs = false;
 
@@ -29,10 +29,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _loadPendingReminderPrefs() async {
-    final minutes = await loadPendingReminderRepeatMinutes();
+    final seconds = await loadPendingReminderRepeatSeconds();
     if (!mounted) return;
     setState(() {
-      _pendingReminderRepeatMinutes = minutes;
+      _pendingReminderRepeatSeconds = seconds;
       _isLoadingPendingReminderPrefs = false;
     });
   }
@@ -97,19 +97,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  Future<void> _savePendingReminderRepeatMinutes(int minutes) async {
+  Future<void> _savePendingReminderRepeatSeconds(int seconds) async {
     if (_isSavingPendingReminderPrefs ||
-        minutes == _pendingReminderRepeatMinutes) {
+        seconds == _pendingReminderRepeatSeconds) {
       return;
     }
 
     setState(() {
-      _pendingReminderRepeatMinutes = minutes;
+      _pendingReminderRepeatSeconds = seconds;
       _isSavingPendingReminderPrefs = true;
     });
 
     try {
-      await savePendingReminderRepeatMinutes(minutes);
+      await savePendingReminderRepeatSeconds(seconds);
 
       final ns = ref.read(notificationServiceProvider);
       final tasks = ref
@@ -184,22 +184,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             const SizedBox(height: 14),
             DropdownButtonFormField<int>(
-              key: ValueKey(_pendingReminderRepeatMinutes),
-              initialValue: _pendingReminderRepeatMinutes,
+              key: ValueKey(_pendingReminderRepeatSeconds),
+              initialValue: _pendingReminderRepeatSeconds,
               decoration: const InputDecoration(labelText: 'Repetir a cada'),
-              items: kPendingReminderRepeatMinuteOptions
+              items: kPendingReminderRepeatSecondOptions
                   .map(
-                    (minutes) => DropdownMenuItem<int>(
-                      value: minutes,
-                      child: Text(pendingReminderRepeatLabel(minutes)),
+                    (seconds) => DropdownMenuItem<int>(
+                      value: seconds,
+                      child: Text(pendingReminderRepeatLabel(seconds)),
                     ),
                   )
                   .toList(),
               onChanged: isBusy
                   ? null
-                  : (minutes) {
-                      if (minutes == null) return;
-                      _savePendingReminderRepeatMinutes(minutes);
+                  : (seconds) {
+                      if (seconds == null) return;
+                      _savePendingReminderRepeatSeconds(seconds);
                     },
             ),
           ],

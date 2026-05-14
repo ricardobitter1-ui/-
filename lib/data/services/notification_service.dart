@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+// ignore: implementation_imports — necessário para serializar [AndroidNotificationDetails] como o plugin.
+import 'package:flutter_local_notifications/src/platform_specifics/android/method_channel_mappers.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -20,6 +24,11 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
+
+  /// Mesmo nome de canal do plugin (Android); usado para [repeatIntervalMilliseconds] no zonedSchedule.
+  static const MethodChannel _kAndroidLocalNotificationsChannel = MethodChannel(
+    'dexterous.com/flutter/local_notifications',
+  );
 
   final StreamController<NotificationResponse> _responseController =
       StreamController<NotificationResponse>.broadcast();
@@ -76,7 +85,10 @@ class NotificationService {
     ),
   ];
 
-  static NotificationDetails taskReminderNotificationDetails() {
+  static NotificationDetails taskReminderNotificationDetails({String? taskId}) {
+    final String? threadId = (taskId == null || taskId.isEmpty)
+        ? null
+        : 'tdr_${taskId.hashCode.abs()}';
     return NotificationDetails(
       android: AndroidNotificationDetails(
         'task_channel_id_v2',
@@ -89,12 +101,41 @@ class NotificationService {
         playSound: true,
         enableVibration: true,
         actions: kTaskReminderAndroidActions,
+        groupKey: threadId,
       ),
-      iOS: DarwinNotificationDetails(categoryIdentifier: kCategoryTaskReminder),
+      iOS: DarwinNotificationDetails(
+        categoryIdentifier: kCategoryTaskReminder,
+        threadIdentifier: threadId,
+      ),
       macOS: DarwinNotificationDetails(
         categoryIdentifier: kCategoryTaskReminder,
+        threadIdentifier: threadId,
       ),
     );
+  }
+
+  /// Mesmo formato que o plugin usa em [TZDateTimeMapper] (argumento `zonedSchedule` no Android).
+  static Map<String, Object> _tzDateTimeToZonedScheduleMap(tz.TZDateTime scheduledDate) {
+    String twoDigits(int n) => n >= 10 ? '$n' : '0$n';
+    final offsetMinutesComponent = twoDigits(
+      scheduledDate.timeZoneOffset.inMinutes.remainder(60),
+    );
+    final offsetHoursComponent =
+        (scheduledDate.timeZoneOffset.inMicroseconds ~/
+                Duration.microsecondsPerHour)
+            .abs();
+    final iso8601OffsetComponent =
+        '${scheduledDate.timeZoneOffset.isNegative ? '-' : '+'}${twoDigits(offsetHoursComponent)}$offsetMinutesComponent';
+    final iso8601DateComponent = scheduledDate
+        .toIso8601String()
+        .split('.')[0]
+        .replaceAll(iso8601OffsetComponent, '')
+        .replaceAll('Z', '');
+    return <String, Object>{
+      'timeZoneName': scheduledDate.location.name,
+      'scheduledDateTime': iso8601DateComponent,
+      'scheduledDateTimeISO8601': scheduledDate.toIso8601String(),
+    };
   }
 
   Future<void> initialize({
@@ -213,6 +254,44 @@ class NotificationService {
     await androidImplementation?.requestExactAlarmsPermission();
   }
 
+  /// Android: um único alarme com [repeatIntervalMilliseconds] reapresenta a mesma notificação
+  /// (mesmo ID), substituindo a anterior em vez de empilhar cópias.
+  Future<void> _androidZonedScheduleRepeatingReminder({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledTime,
+    required String taskId,
+    required Duration repeatInterval,
+  }) async {
+    await initialize();
+    final now = DateTime.now();
+    if (scheduledTime.isBefore(now)) return;
+    if (repeatInterval.inMilliseconds <= 0) return;
+
+    final tzScheduledDate = tz.TZDateTime.from(scheduledTime, tz.local);
+    final androidDetails = taskReminderNotificationDetails(taskId: taskId).android!;
+    final platformSpecifics = <String, Object?>{
+      ...androidDetails.toMap(),
+      'scheduleMode': AndroidScheduleMode.exactAllowWhileIdle.name,
+    };
+    final payload = taskId.isEmpty ? '' : reminderPayload(taskId);
+
+    await _kAndroidLocalNotificationsChannel.invokeMethod<void>(
+      'zonedSchedule',
+      <String, Object?>{
+        'id': id,
+        'title': title,
+        'body': body,
+        'payload': payload,
+        'platformSpecifics': platformSpecifics,
+        ..._tzDateTimeToZonedScheduleMap(tzScheduledDate),
+        'repeatIntervalMilliseconds': repeatInterval.inMilliseconds,
+        'calledAt': tzScheduledDate.millisecondsSinceEpoch,
+      },
+    );
+  }
+
   Future<void> scheduleTaskReminder(
     int id,
     String title,
@@ -252,7 +331,7 @@ class NotificationService {
         title: title,
         body: body,
         scheduledDate: tzScheduledDate,
-        notificationDetails: taskReminderNotificationDetails(),
+        notificationDetails: taskReminderNotificationDetails(taskId: taskId),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         payload: payload,
       );
@@ -333,6 +412,7 @@ class NotificationService {
     required DateTime now,
     required Duration? repeatInterval,
     DateTime? untilExclusive,
+    bool useNativeAndroidRepeating = false,
   }) async {
     var slot = startSlot;
     DateTime? nextTime;
@@ -343,9 +423,39 @@ class NotificationService {
       nextTime = _nextRepeatAfter(startTime, now, repeatInterval);
     }
 
+    final bool useAndroidRepeatingChain =
+        useNativeAndroidRepeating &&
+        repeatInterval != null &&
+        untilExclusive == null &&
+        Platform.isAndroid &&
+        nextTime != null &&
+        slot < maxSlots;
+
+    if (useAndroidRepeatingChain) {
+      final firstFire = nextTime;
+      final interval = repeatInterval;
+      try {
+        await _androidZonedScheduleRepeatingReminder(
+          id: baseId + slot,
+          title: title,
+          body: body,
+          scheduledTime: firstFire,
+          taskId: taskId,
+          repeatInterval: interval,
+        );
+        return slot + 1;
+      } catch (e) {
+        print(
+          'DEBUG NOTIF: falha no zonedSchedule com repetição nativa Android: $e — usando série discretizada.',
+        );
+      }
+    }
+
     while (nextTime != null && slot < maxSlots) {
       if (untilExclusive != null && !nextTime.isBefore(untilExclusive)) break;
       try {
+        // Android sem recorrência: repetição nativa (um ID). Recorrente / iOS / fallback:
+        // vários IDs (ver comentário no ramo nativo acima).
         await scheduleTaskReminder(
           baseId + slot,
           title,
@@ -450,6 +560,7 @@ class NotificationService {
       taskId: task.id,
       now: now,
       repeatInterval: repeatInterval,
+      useNativeAndroidRepeating: true,
     );
   }
 

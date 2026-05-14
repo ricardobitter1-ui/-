@@ -1,43 +1,67 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-const int kDefaultPendingReminderRepeatMinutes = 30;
+/// Padrão: repetir a cada 30 minutos (comportamento anterior).
+const int kDefaultPendingReminderRepeatSeconds = 30 * 60;
 
 /// Use 0 para desativar os lembretes repetidos de tarefas pendentes.
-const List<int> kPendingReminderRepeatMinuteOptions = [0, 5, 15, 30, 60];
+/// Valores em segundos (30 s facilita testes; demais equivalem às opções em minutos).
+const List<int> kPendingReminderRepeatSecondOptions = [
+  0,
+  30,
+  5 * 60,
+  15 * 60,
+  30 * 60,
+  60 * 60,
+];
 
 abstract final class PendingReminderPrefsKeys {
+  static const String repeatSeconds = 'pending_reminder_repeat_seconds';
+  /// Chave antiga (minutos); lida uma vez na migração e removida.
   static const String repeatMinutes = 'pending_reminder_repeat_minutes';
 }
 
-int normalizePendingReminderRepeatMinutes(int? value) {
-  if (value == null) return kDefaultPendingReminderRepeatMinutes;
-  if (kPendingReminderRepeatMinuteOptions.contains(value)) return value;
-  return kDefaultPendingReminderRepeatMinutes;
+int normalizePendingReminderRepeatSeconds(int? value) {
+  if (value == null) return kDefaultPendingReminderRepeatSeconds;
+  if (kPendingReminderRepeatSecondOptions.contains(value)) return value;
+  return kDefaultPendingReminderRepeatSeconds;
 }
 
-String pendingReminderRepeatLabel(int minutes) {
-  if (minutes == 0) return 'Desativado';
-  if (minutes == 60) return '1 hora';
-  return '$minutes minutos';
+String pendingReminderRepeatLabel(int seconds) {
+  if (seconds == 0) return 'Desativado';
+  if (seconds == 60 * 60) return '1 hora';
+  if (seconds < 60) return '$seconds segundos';
+  final m = seconds ~/ 60;
+  return '$m minutos';
 }
 
-Future<int> loadPendingReminderRepeatMinutes() async {
+Future<int> loadPendingReminderRepeatSeconds() async {
   final p = await SharedPreferences.getInstance();
-  return normalizePendingReminderRepeatMinutes(
-    p.getInt(PendingReminderPrefsKeys.repeatMinutes),
-  );
+
+  if (p.containsKey(PendingReminderPrefsKeys.repeatSeconds)) {
+    return normalizePendingReminderRepeatSeconds(
+      p.getInt(PendingReminderPrefsKeys.repeatSeconds),
+    );
+  }
+
+  final legacyMinutes = p.getInt(PendingReminderPrefsKeys.repeatMinutes);
+  final migrated = legacyMinutes == null
+      ? kDefaultPendingReminderRepeatSeconds
+      : normalizePendingReminderRepeatSeconds(legacyMinutes * 60);
+
+  await p.setInt(PendingReminderPrefsKeys.repeatSeconds, migrated);
+  await p.remove(PendingReminderPrefsKeys.repeatMinutes);
+  return migrated;
 }
 
 Future<Duration?> loadPendingReminderRepeatInterval() async {
-  final minutes = await loadPendingReminderRepeatMinutes();
-  if (minutes == 0) return null;
-  return Duration(minutes: minutes);
+  final seconds = await loadPendingReminderRepeatSeconds();
+  if (seconds == 0) return null;
+  return Duration(seconds: seconds);
 }
 
-Future<void> savePendingReminderRepeatMinutes(int minutes) async {
+Future<void> savePendingReminderRepeatSeconds(int seconds) async {
   final p = await SharedPreferences.getInstance();
-  await p.setInt(
-    PendingReminderPrefsKeys.repeatMinutes,
-    normalizePendingReminderRepeatMinutes(minutes),
-  );
+  final normalized = normalizePendingReminderRepeatSeconds(seconds);
+  await p.setInt(PendingReminderPrefsKeys.repeatSeconds, normalized);
+  await p.remove(PendingReminderPrefsKeys.repeatMinutes);
 }
