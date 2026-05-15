@@ -13,6 +13,7 @@ import '../models/tag_model.dart';
 import '../models/group_model.dart';
 import '../models/group_invite_model.dart';
 import '../models/user_public_profile.dart';
+import '../../business_logic/task_schedule_sort.dart';
 import '../../utils/calendar_day_key.dart';
 import '../../utils/title_search_key.dart';
 import 'auth_service.dart';
@@ -250,9 +251,7 @@ class FirebaseService {
         if (d == null) return false;
         return !d.isBefore(startOfDay) && d.isBefore(startOfNextDay);
       }).toList();
-      filtered.sort(
-        (a, b) => (a.dueDate ?? DateTime(0)).compareTo(b.dueDate ?? DateTime(0)),
-      );
+      sortTasksByScheduleOrder(filtered);
       return filtered;
     });
   }

@@ -57,5 +57,17 @@ void main() {
         '9',
       );
     });
+
+    test('infers group when name is mentioned in reminder', () {
+      final groups = [_g('1', 'Pessoal'), _g('2', 'Chico')];
+      expect(
+        inferGroupNameFromTranscript(
+          transcript:
+              'me lembre de comprar a ração para o Chico amanhã às 10 da manhã',
+          groups: groups,
+        ),
+        'Chico',
+      );
+    });
   });
 }

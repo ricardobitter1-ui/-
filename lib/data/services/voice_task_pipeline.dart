@@ -6,6 +6,7 @@ import '../../business_logic/voice_tag_resolver.dart';
 import '../../business_logic/voice_task_duplicate_finder.dart';
 import '../../business_logic/voice_task_due_parser.dart';
 import '../../business_logic/voice_task_group_resolver.dart';
+import '../../business_logic/voice_task_title_sanitizer.dart';
 import '../../debug/voice_perf_logger.dart';
 import '../../utils/calendar_day_key.dart';
 import '../models/extracted_voice_task_dto.dart';
@@ -113,6 +114,7 @@ class VoiceTaskPipeline {
         transcript: transcript,
         referenceDate: ref,
         forcedGroupName: forcedGroupName,
+        groups: groups,
       );
       if (heuristic.confident && heuristic.task != null) {
         await VoicePerfLogger.phase(
@@ -121,7 +123,11 @@ class VoiceTaskPipeline {
           hypothesisId: 'B',
           data: {'intent': 'reminder_heuristic_ok'},
         );
-        return [heuristic.task!];
+        return _finalizeExtractedTasks(
+          tasks: [heuristic.task!],
+          transcript: transcript,
+          groups: groups,
+        );
       }
     }
 
@@ -153,7 +159,35 @@ class VoiceTaskPipeline {
         'model': _llm.modelId,
       },
     );
-    return dtos;
+    return _finalizeExtractedTasks(
+      tasks: dtos,
+      transcript: transcript,
+      groups: groups,
+    );
+  }
+
+  List<ExtractedVoiceTaskDto> _finalizeExtractedTasks({
+    required List<ExtractedVoiceTaskDto> tasks,
+    required String transcript,
+    required List<GroupModel> groups,
+  }) {
+    return tasks
+        .map((dto) {
+          final title = VoiceTaskTitleSanitizer.sanitize(
+            dto.title,
+            stripDateHints: dto.date != null,
+            stripTimeHints: dto.time != null,
+          );
+          var groupName = dto.groupName?.trim();
+          if (groupName == null || groupName.isEmpty) {
+            groupName = inferGroupNameFromTranscript(
+              transcript: transcript,
+              groups: groups,
+            );
+          }
+          return dto.copyWith(title: title, groupName: groupName);
+        })
+        .toList();
   }
 
   Future<List<ExtractedVoiceTaskDto>> enrichExtractedVoiceTasksWithTagAssignments({

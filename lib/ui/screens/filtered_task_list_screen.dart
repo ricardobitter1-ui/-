@@ -15,6 +15,7 @@ import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../data/models/group_model.dart';
 import '../../data/services/auth_service.dart';
 import '../../business_logic/task_list_partition.dart';
+import '../../business_logic/task_schedule_sort.dart';
 import '../../data/models/task_model.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
@@ -105,11 +106,8 @@ class _FilteredTaskListScreenState
             .where((t) => taskVisibleOnDay(t, _selectedDate))
             .toList();
       case TaskFilterType.scheduled:
-        final list = all.where(taskMatchesScheduledFilter).toList()
-          ..sort(
-            (a, b) => (a.dueDate ?? DateTime(0))
-                .compareTo(b.dueDate ?? DateTime(0)),
-          );
+        final list = all.where(taskMatchesScheduledFilter).toList();
+        sortTasksByScheduleOrder(list);
         return list;
       case TaskFilterType.all:
         return all;

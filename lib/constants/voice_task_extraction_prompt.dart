@@ -27,6 +27,8 @@ Regras:
 - Datas relativas ("hoje", "amanhã") resolve-as com a "data de referência" enviada pelo utilizador; devolve sempre "date" em formato YYYY-MM-DD quando souberes o dia.
 - "time" em 24h (HH:mm). Se não houver hora, null.
 - "description" pode ser vazio.
+- "title" deve ser só a ação ou o lembrete: **não** incluas data, hora nem expressões como "hoje", "amanhã", "às 10", "da manhã" — isso vai em "date" e "time".
+- Se o utilizador mencionar um nome que coincida com um grupo da lista (ex.: "para o Chico" e existe o grupo "Chico"), usa esse nome **exacto** em "groupName". Não uses outro grupo por defeito.
 - Quando a mensagem do utilizador incluir "Etiquetas por grupo", para cada tarefa com "groupName" preenchido: se for item de compras/lista desse grupo, preenche "tagName" com o nome **exacto** de uma etiqueta desse grupo na lista, ou null se nenhuma encaixar. Se "groupName" for null, "tagName" deve ser null.
 - Se **não** houver "Etiquetas por grupo" na mensagem, usa sempre "tagName": null.
 ''';
@@ -53,7 +55,8 @@ Regras:
 - Uma só entrada em "tasks".
 - Resolve "hoje", "amanhã" com a data de referência do utilizador.
 - "time" em 24h ou null.
-- "groupName" só se estiver na lista de grupos enviada; senão null.
+- "groupName" só se estiver na lista de grupos enviada; senão null. Se o utilizador disser "para o X" / "no X" e "X" for um grupo da lista, preenche "groupName" com esse nome exacto.
+- "title" sem data nem hora (só a ação); "amanhã", "às 10", "da manhã" vão em "date" e "time", não no título.
 - "tagName" sempre null.
 ''';
 

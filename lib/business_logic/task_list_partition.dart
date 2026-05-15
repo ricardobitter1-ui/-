@@ -1,5 +1,6 @@
 import '../data/models/task_model.dart';
 import 'task_occurrence_display.dart';
+import 'task_schedule_sort.dart';
 
 /// Separa [tasks] em pendentes e concluídas, **preservando a ordem** do stream.
 ({List<TaskModel> active, List<TaskModel> completed})
@@ -13,6 +14,7 @@ import 'task_occurrence_display.dart';
       active.add(t);
     }
   }
+  sortTasksByScheduleOrder(active);
   return (active: active, completed: completed);
 }
 
@@ -31,5 +33,6 @@ import 'task_occurrence_display.dart';
       active.add(t);
     }
   }
+  sortTasksByScheduleOrder(active, calendarDay: day);
   return (active: active, completed: completed);
 }
