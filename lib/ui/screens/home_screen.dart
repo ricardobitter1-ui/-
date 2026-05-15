@@ -8,11 +8,14 @@ import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../business_logic/task_day_visibility.dart';
 import '../../business_logic/task_list_partition.dart';
 import '../../business_logic/task_occurrence_display.dart';
+import '../../data/models/group_model.dart';
 import '../../data/models/task_model.dart';
+import '../../data/models/user_public_profile.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/color_utils.dart';
 import '../widgets/expandable_create_task_fab.dart';
 import '../widgets/task_appear_motion.dart';
 import '../widgets/task_card.dart';
@@ -189,13 +192,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // ── helpers de contagem ────────────────────────────────────────────────
 
-  static String _homeTodayAssigneeCacheKey(List<TaskModel> todayActive) {
-    final n = todayActive.length > 5 ? 5 : todayActive.length;
+  static String _homeAssigneeCacheKey(List<TaskModel> visibleActive) {
+    final n = visibleActive.length > 5 ? 5 : visibleActive.length;
     final ids = <String>{};
     for (var i = 0; i < n; i++) {
-      ids.addAll(todayActive[i].assigneeIds);
+      ids.addAll(visibleActive[i].assigneeIds);
     }
     return memberUidsCacheKey(ids);
+  }
+
+  static List<TaskModel> _activeTasksForDay(
+    List<TaskModel> allTasks,
+    DateTime day,
+  ) {
+    final dayTasks =
+        allTasks.where((t) => taskVisibleOnDay(t, day)).toList();
+    return partitionTasksByCompletionForCalendarDay(dayTasks, day).active;
+  }
+
+  static String _resolveGroupLabel(TaskModel t, Map<String, GroupModel> byId) {
+    final id = t.groupId?.trim();
+    if (id == null || id.isEmpty) return 'Pessoal';
+    return byId[id]?.name ?? 'Grupo';
+  }
+
+  static Color _resolveGroupAccent(TaskModel t, Map<String, GroupModel> byId) {
+    final id = t.groupId?.trim();
+    if (id == null || id.isEmpty) return Colors.grey.shade500;
+    final g = byId[id];
+    if (g == null) return Colors.grey.shade500;
+    return parseAppHexColor(g.color);
   }
 
   // ── build ──────────────────────────────────────────────────────────────
@@ -209,16 +235,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       data: (allTasks) {
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
-        final todayTasks =
-            allTasks.where((t) => taskVisibleOnDay(t, today)).toList();
-        final todayActive =
-            partitionTasksByCompletionForCalendarDay(todayTasks, today).active;
-        return _homeTodayAssigneeCacheKey(todayActive);
+        final tomorrow = today.add(const Duration(days: 1));
+        final todayActive = _activeTasksForDay(allTasks, today);
+        final tomorrowActive = _activeTasksForDay(allTasks, tomorrow);
+        return _homeAssigneeCacheKey([
+          ...todayActive.take(5),
+          ...tomorrowActive.take(5),
+        ]);
       },
       orElse: () => '',
     );
     final assigneeProfileMap =
         ref.watch(groupMemberProfilesProvider(homeAssigneeKey)).value ?? {};
+    final groupsList =
+        ref.watch(groupsStreamProvider).value ?? const <GroupModel>[];
+    final groupById = {for (final g in groupsList) g.id: g};
 
     return Scaffold(
       body: SafeArea(
@@ -234,10 +265,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 allTasks.where(taskMatchesScheduledFilter).toList();
             final overdueRows = collectOverdueOccurrenceRows(allTasks, now);
 
-            final todayActive = partitionTasksByCompletionForCalendarDay(
-              todayTasks,
-              today,
-            ).active;
+            final todayActive = _activeTasksForDay(allTasks, today);
+            final tomorrow = today.add(const Duration(days: 1));
+            final tomorrowActive = _activeTasksForDay(allTasks, tomorrow);
+            final hasTomorrow = tomorrowActive.isNotEmpty;
+            final hasUpcoming = todayActive.isNotEmpty || hasTomorrow;
 
             return CustomScrollView(
               slivers: [
@@ -248,62 +280,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   allCount: allTasks.length,
                   overdueCount: overdueRows.length,
                 ),
-                _buildSectionTitle('Tarefas de hoje'),
-                if (todayActive.isEmpty)
+                _buildSectionTitle('Próximas tarefas'),
+                if (todayActive.isNotEmpty)
+                  ..._buildHomeTaskSlivers(
+                    tasks: todayActive,
+                    calendarDay: today,
+                    listKeyPrefix: 'home-today',
+                    assigneeProfileMap: assigneeProfileMap,
+                    groupById: groupById,
+                    user: user,
+                    padBottomForFab:
+                        !hasTomorrow && todayActive.length <= 5,
+                  ),
+                if (hasTomorrow) ...[
+                  _buildDaySectionDivider('Tarefas de amanhã'),
+                  ..._buildHomeTaskSlivers(
+                    tasks: tomorrowActive,
+                    calendarDay: tomorrow,
+                    listKeyPrefix: 'home-tomorrow',
+                    assigneeProfileMap: assigneeProfileMap,
+                    groupById: groupById,
+                    user: user,
+                    padBottomForFab: tomorrowActive.length <= 5,
+                  ),
+                ],
+                if (!hasUpcoming)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                      child: _buildEmptyTodayState(),
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 80),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final task = todayActive[index];
-                          return TaskAppearMotion(
-                            key: ValueKey('home-today-${task.id}'),
-                            child: TaskCard(
-                              task: task,
-                              displayDueOverride:
-                                  displayDueForTaskOnCalendarDay(task, today),
-                              isCompletedOverride:
-                                  isOccurrenceCompletedOnCalendarDay(
-                                      task, today),
-                              assigneeProfiles: assigneeProfileMap,
-                              selfUid: user?.uid,
-                              selfPhotoUrl: user?.photoURL,
-                              onToggle: () async {
-                                final fs = ref.read(firebaseServiceProvider);
-                                final ns =
-                                    ref.read(notificationServiceProvider);
-                                await completeTaskToggle(
-                                  fs: fs,
-                                  ns: ns,
-                                  task: task,
-                                  occurrenceCalendarDay: today,
-                                );
-                              },
-                              onEdit: () => _openTaskForm(task: task),
-                              onDelete: () => _confirmAndDeleteTask(task),
-                            ),
-                          );
-                        },
-                        childCount:
-                            todayActive.length > 5 ? 5 : todayActive.length,
-                      ),
+                      child: _buildEmptyUpcomingState(),
                     ),
                   ),
                 if (todayActive.length > 5)
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 80),
+                      padding: EdgeInsets.fromLTRB(
+                        24,
+                        0,
+                        24,
+                        hasTomorrow ? 0 : 80,
+                      ),
                       child: TextButton(
                         onPressed: () => _navigateToFilter(TaskFilterType.today),
                         child: Text(
                           'Ver todas as ${todayActive.length} tarefas de hoje',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.brandPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (hasTomorrow && tomorrowActive.length > 5)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 80),
+                      child: TextButton(
+                        onPressed: () =>
+                            _navigateToFilter(TaskFilterType.scheduled),
+                        child: Text(
+                          'Ver todas as ${tomorrowActive.length} tarefas de amanhã',
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
                             color: AppTheme.brandPrimary,
@@ -432,6 +469,88 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  List<Widget> _buildHomeTaskSlivers({
+    required List<TaskModel> tasks,
+    required DateTime calendarDay,
+    required String listKeyPrefix,
+    required Map<String, UserPublicProfile?> assigneeProfileMap,
+    required Map<String, GroupModel> groupById,
+    required dynamic user,
+    required bool padBottomForFab,
+  }) {
+    final previewCount = tasks.length > 5 ? 5 : tasks.length;
+    return [
+      SliverPadding(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          0,
+          24,
+          padBottomForFab ? 80 : 0,
+        ),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final task = tasks[index];
+              return TaskAppearMotion(
+                key: ValueKey('$listKeyPrefix-${task.id}'),
+                child: TaskCard(
+                  task: task,
+                  displayDueOverride:
+                      displayDueForTaskOnCalendarDay(task, calendarDay),
+                  isCompletedOverride:
+                      isOccurrenceCompletedOnCalendarDay(task, calendarDay),
+                  assigneeProfiles: assigneeProfileMap,
+                  selfUid: user?.uid,
+                  selfPhotoUrl: user?.photoURL,
+                  groupLabel: _resolveGroupLabel(task, groupById),
+                  groupAccentColor: _resolveGroupAccent(task, groupById),
+                  onToggle: () async {
+                    final fs = ref.read(firebaseServiceProvider);
+                    final ns = ref.read(notificationServiceProvider);
+                    await completeTaskToggle(
+                      fs: fs,
+                      ns: ns,
+                      task: task,
+                      occurrenceCalendarDay: calendarDay,
+                    );
+                  },
+                  onEdit: () => _openTaskForm(task: task),
+                  onDelete: () => _confirmAndDeleteTask(task),
+                ),
+              );
+            },
+            childCount: previewCount,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildDaySectionDivider(String label) {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+        child: Row(
+          children: [
+            Expanded(child: Divider(color: Colors.grey.shade300)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: Colors.grey.shade300)),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── section title ──────────────────────────────────────────────────────
 
   Widget _buildSectionTitle(String title) {
@@ -450,9 +569,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  // ── empty today state ──────────────────────────────────────────────────
+  // ── empty upcoming state ───────────────────────────────────────────────
 
-  Widget _buildEmptyTodayState() {
+  Widget _buildEmptyUpcomingState() {
     return Column(
       children: [
         const SizedBox(height: 16),
@@ -470,7 +589,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         const SizedBox(height: 16),
         const Text(
-          'Nenhuma tarefa pendente para hoje',
+          'Nenhuma tarefa pendente para hoje ou amanhã',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
+import '../../business_logic/voice_recording_quality.dart';
 import '../../business_logic/voice_task_group_resolver.dart';
 import '../../debug/voice_perf_logger.dart';
 import '../../data/models/group_model.dart';
@@ -18,6 +19,7 @@ import '../../data/services/notification_service.dart';
 import '../../data/services/voice_api_config.dart';
 import '../../data/services/voice_task_pipeline.dart';
 import '../theme/app_theme.dart';
+import 'voice_amplitude_waveform.dart';
 
 Future<void> showVoiceTaskRecordingSheet({
   required BuildContext context,
@@ -58,16 +60,84 @@ class _VoiceTaskRecordingBody extends ConsumerStatefulWidget {
 }
 
 class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody> {
+  static const int _waveBarCount = 32;
+
   final AudioRecorder _recorder = AudioRecorder();
   bool _recording = false;
+  bool _starting = false;
   bool _processing = false;
   String? _error;
   String? _tempPath;
+  StreamSubscription<Amplitude>? _amplitudeSub;
+  List<double> _waveLevels =
+      List<double>.filled(_waveBarCount, 0.08, growable: false);
+  DateTime? _recordingStartedAt;
+  double _peakDbfs = VoiceRecordingQuality.silenceDbfs;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_startRecording());
+    });
+  }
 
   @override
   void dispose() {
+    _amplitudeSub?.cancel();
     unawaited(_recorder.dispose());
     super.dispose();
+  }
+
+  void _listenAmplitude() {
+    _amplitudeSub?.cancel();
+    _amplitudeSub = _recorder
+        .onAmplitudeChanged(const Duration(milliseconds: 80))
+        .listen((amp) {
+      if (!mounted) return;
+      _peakDbfs = VoiceRecordingQuality.trackPeakDbfs(_peakDbfs, amp.current);
+      _peakDbfs = VoiceRecordingQuality.trackPeakDbfs(_peakDbfs, amp.max);
+      final level = voiceAmplitudeLevel(amp.current);
+      setState(() {
+        final next = List<double>.from(_waveLevels)..removeAt(0)..add(level);
+        _waveLevels = next;
+      });
+    });
+  }
+
+  void _stopAmplitudeListener() {
+    _amplitudeSub?.cancel();
+    _amplitudeSub = null;
+    if (mounted) {
+      setState(() {
+        _waveLevels = List<double>.filled(_waveBarCount, 0.08, growable: false);
+      });
+    }
+  }
+
+  void _resetRecordingMetrics() {
+    _recordingStartedAt = null;
+    _peakDbfs = VoiceRecordingQuality.silenceDbfs;
+  }
+
+  Future<void> _discardInvalidRecording({
+    required String? filePath,
+    required VoiceRecordingQualityIssue issue,
+  }) async {
+    if (filePath != null) {
+      try {
+        final f = File(filePath);
+        if (f.existsSync()) await f.delete();
+      } catch (_) {}
+    }
+    _tempPath = null;
+    _resetRecordingMetrics();
+    if (!mounted) return;
+    setState(() {
+      _processing = false;
+      _recording = false;
+      _error = issue.userMessage;
+    });
   }
 
   Future<bool> _ensureMicPermission() async {
@@ -101,23 +171,30 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
   }
 
   Future<void> _startRecording() async {
+    if (_recording || _starting || _processing) return;
     setState(() {
       _error = null;
+      _starting = true;
     });
     if (!VoiceApiConfig.isConfigured) {
       final hint = VoiceApiConfig.configurationHint();
       setState(() {
+        _starting = false;
         _error =
             '${hint.isNotEmpty ? hint : 'APIs não configuradas.'}\nCopie secrets.json.example para secrets.json e execute:\nflutter run --dart-define-from-file=secrets.json';
       });
       return;
     }
     final ok = await _ensureMicPermission();
-    if (!ok || !mounted) return;
+    if (!ok || !mounted) {
+      setState(() => _starting = false);
+      return;
+    }
 
     final can = await _recorder.hasPermission();
     if (can != true) {
       setState(() {
+        _starting = false;
         _error = 'Sem permissão para gravar áudio.';
       });
       return;
@@ -129,15 +206,25 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
     _tempPath = path;
     try {
       await _recorder.start(const RecordConfig(), path: path);
-      setState(() => _recording = true);
+      if (!mounted) return;
+      _recordingStartedAt = DateTime.now();
+      _peakDbfs = VoiceRecordingQuality.silenceDbfs;
+      _listenAmplitude();
+      setState(() {
+        _recording = true;
+        _starting = false;
+      });
     } catch (e) {
       setState(() {
+        _starting = false;
         _error = 'Não foi possível iniciar a gravação: $e';
       });
     }
   }
 
   Future<void> _stopAndDiscard() async {
+    if (_processing) return;
+    _stopAmplitudeListener();
     if (_recording) {
       await _recorder.cancel();
       _recording = false;
@@ -148,11 +235,13 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
   }
 
   Future<void> _confirmRecording() async {
-    if (!_recording) return;
-    setState(() {
-      _processing = true;
-      _error = null;
-    });
+    if (!_recording || _processing) return;
+    _stopAmplitudeListener();
+    final duration = _recordingStartedAt != null
+        ? DateTime.now().difference(_recordingStartedAt!)
+        : Duration.zero;
+    final peakDbfs = _peakDbfs;
+
     String? path;
     try {
       path = await _recorder.stop();
@@ -173,6 +262,23 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
       });
       return;
     }
+
+    final qualityIssue = VoiceRecordingQuality.validate(
+      duration: duration,
+      peakDbfs: peakDbfs,
+    );
+    if (qualityIssue != null) {
+      await _discardInvalidRecording(
+        filePath: filePath,
+        issue: qualityIssue,
+      );
+      return;
+    }
+
+    setState(() {
+      _processing = true;
+      _error = null;
+    });
 
     final file = File(filePath);
     final pipeline = VoiceTaskPipeline();
@@ -405,52 +511,56 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
     }
   }
 
+  String get _statusText {
+    if (_processing) return 'A transcrever e a criar tarefas…';
+    if (_starting) return 'A preparar o microfone…';
+    if (_recording) {
+      return 'Fale com calma. Toque no quadrado vermelho quando terminar.';
+    }
+    if (_error != null) return 'Ajuste a gravação e tente novamente.';
+    return 'A iniciar gravação…';
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.paddingOf(context).bottom;
+    final canStop = _recording && !_processing;
+    final canCancel = !_processing;
+
     return Padding(
-      padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + bottom),
+      padding: EdgeInsets.fromLTRB(24, 20, 24, 20 + bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Ditar tarefa',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF2B2D42),
-                  ),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close_rounded),
-                onPressed: _processing ? null : _stopAndDiscard,
-              ),
-            ],
+          const Text(
+            'Ditar tarefa',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF2B2D42),
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
-            _recording
-                ? 'A gravar… Toque em Confirmar quando terminar.'
-                : 'Toque em Gravar, fale com calma e depois em Confirmar.',
+            _statusText,
+            textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(
               _error!,
+              textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.redAccent, fontSize: 13),
             ),
           ],
-          const SizedBox(height: 24),
+          const SizedBox(height: 28),
           if (_processing)
             const Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
+                padding: EdgeInsets.symmetric(vertical: 32),
                 child: Column(
                   children: [
                     CircularProgressIndicator(color: AppTheme.brandPrimary),
@@ -460,31 +570,90 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
                 ),
               ),
             )
-          else
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _recording ? null : _startRecording,
-                    icon: const Icon(Icons.mic_rounded),
-                    label: const Text('Gravar'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _recording ? _confirmRecording : null,
-                    icon: const Icon(Icons.check_rounded),
-                    label: const Text('Confirmar'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppTheme.brandPrimary,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
+          else ...[
+            VoiceAmplitudeWaveform(
+              levels: _waveLevels,
+              barCount: _waveBarCount,
+              height: 80,
+              activeColor: _recording ? AppTheme.brandPrimary : Colors.grey.shade400,
             ),
+            const SizedBox(height: 32),
+            Center(
+              child: _VoiceStopButton(
+                enabled: canStop,
+                onPressed: canStop ? _confirmRecording : null,
+              ),
+            ),
+            const SizedBox(height: 20),
+            TextButton(
+              onPressed: canCancel ? _stopAndDiscard : null,
+              child: Text(
+                'Cancelar',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: canCancel ? Colors.grey.shade700 : Colors.grey.shade400,
+                ),
+              ),
+            ),
+            if (_error != null && !_recording) ...[
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: canCancel ? () => unawaited(_startRecording()) : null,
+                child: const Text('Tentar novamente'),
+              ),
+            ],
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// Botão circular de parar gravação (quadrado vermelho no centro).
+class _VoiceStopButton extends StatelessWidget {
+  const _VoiceStopButton({
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final bool enabled;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const CircleBorder(),
+        child: Ink(
+          width: 88,
+          height: 88,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: enabled
+                ? AppTheme.brandPrimary.withValues(alpha: 0.1)
+                : Colors.grey.shade100,
+            border: Border.all(
+              color: enabled
+                  ? AppTheme.brandPrimary.withValues(alpha: 0.35)
+                  : Colors.grey.shade300,
+              width: 2,
+            ),
+          ),
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: enabled ? const Color(0xFFE53935) : Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(7),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
