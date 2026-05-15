@@ -12,7 +12,8 @@ Formato obrigatório:
       "description": "",
       "date": "YYYY-MM-DD" ou null,
       "time": "HH:mm" ou null,
-      "groupName": "string" ou null
+      "groupName": "string" ou null,
+      "tagName": "string" ou null
     }
   ]
 }
@@ -26,7 +27,34 @@ Regras:
 - Datas relativas ("hoje", "amanhã") resolve-as com a "data de referência" enviada pelo utilizador; devolve sempre "date" em formato YYYY-MM-DD quando souberes o dia.
 - "time" em 24h (HH:mm). Se não houver hora, null.
 - "description" pode ser vazio.
-- Não incluas "tagName" na fase 1 (as tags são atribuídas noutra fase com o catálogo do grupo).
+- Quando a mensagem do utilizador incluir "Etiquetas por grupo", para cada tarefa com "groupName" preenchido: se for item de compras/lista desse grupo, preenche "tagName" com o nome **exacto** de uma etiqueta desse grupo na lista, ou null se nenhuma encaixar. Se "groupName" for null, "tagName" deve ser null.
+- Se **não** houver "Etiquetas por grupo" na mensagem, usa sempre "tagName": null.
+''';
+
+/// Prompt curto para um único lembrete (data/hora).
+const String kVoiceReminderExtractionSystemPrompt = r'''
+Converte o texto falado num único lembrete em JSON. Responde APENAS com JSON válido.
+
+Formato:
+{
+  "tasks": [
+    {
+      "title": "string curta",
+      "description": "",
+      "date": "YYYY-MM-DD" ou null,
+      "time": "HH:mm" ou null,
+      "groupName": "string" ou null,
+      "tagName": null
+    }
+  ]
+}
+
+Regras:
+- Uma só entrada em "tasks".
+- Resolve "hoje", "amanhã" com a data de referência do utilizador.
+- "time" em 24h ou null.
+- "groupName" só se estiver na lista de grupos enviada; senão null.
+- "tagName" sempre null.
 ''';
 
 /// Fase 2: classificar itens de compra nas etiquetas existentes do grupo.

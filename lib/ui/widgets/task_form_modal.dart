@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../business_logic/complete_task_action.dart';
+import '../../business_logic/providers/group_provider.dart';
 import '../../business_logic/providers/task_provider.dart';
 import '../../business_logic/task_occurrence_display.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
@@ -12,6 +13,7 @@ import '../../constants/geofence_constants.dart';
 import '../../data/models/tag_model.dart';
 import '../../data/models/task_recurrence.dart';
 import '../../data/services/auth_service.dart';
+import '../../data/providers/group_tags_cache_provider.dart';
 import '../../data/services/firebase_service.dart';
 import 'custom_avatar.dart';
 import '../../data/services/location_service.dart';
@@ -21,6 +23,8 @@ import '../../data/models/task_model.dart';
 import '../../data/models/user_public_profile.dart';
 import '../../app_navigator.dart';
 import '../theme/app_theme.dart';
+import '../theme/color_utils.dart';
+import '../theme/group_icon.dart';
 import 'group_tag_name_color_dialog.dart';
 import 'task_schedule_dialog.dart';
 
@@ -76,18 +80,38 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   bool _suggestionsFetched = false;
   List<TagModel> _suggestionTags = [];
 
+  /// Só no fluxo “nova tarefa” sem [forcedGroupId] (ex.: FAB na home).
+  GroupModel? _selectedGroupForNewTask;
+
   bool get _isEditing => widget.initialTask != null;
 
-  bool get _showAssignees =>
-      widget.collaborationGroup != null &&
-      widget.forcedGroupId != null &&
-      widget.forcedGroupId == widget.collaborationGroup!.id;
+  /// Grupo cujo contexto de colaboração (membros / responsáveis) está disponível.
+  GroupModel? get _activeCollaborationGroup {
+    final forced = widget.forcedGroupId?.trim();
+    if (forced != null &&
+        forced.isNotEmpty &&
+        widget.collaborationGroup != null &&
+        widget.collaborationGroup!.id == forced) {
+      return widget.collaborationGroup;
+    }
+    if (!_isEditing && (forced == null || forced.isEmpty)) {
+      return _selectedGroupForNewTask;
+    }
+    return null;
+  }
+
+  bool get _showAssignees {
+    final c = _activeCollaborationGroup;
+    final gid = _effectiveGroupId;
+    return c != null && gid != null && gid == c.id;
+  }
 
   String? get _effectiveGroupId {
     final f = widget.forcedGroupId?.trim();
     if (f != null && f.isNotEmpty) return f;
     final g = widget.initialTask?.groupId?.trim();
     if (g != null && g.isNotEmpty) return g;
+    if (!_isEditing) return _selectedGroupForNewTask?.id;
     return null;
   }
 
@@ -176,6 +200,119 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       _locationRadiusMeters = result.locationRadiusMeters;
       _locationLabel = result.locationLabel;
     });
+  }
+
+  void _applyPickedGroup(GroupModel? g) {
+    setState(() {
+      if (g?.id != _selectedGroupForNewTask?.id) {
+        _selectedTagIds.clear();
+        _selectedAssigneeIds.clear();
+      }
+      _selectedGroupForNewTask = g;
+    });
+  }
+
+  Future<void> _openGroupPickerSheet() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final asyncGroups = ref.read(groupsStreamProvider);
+    if (asyncGroups.isLoading) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('A carregar grupos…')),
+        );
+      }
+      return;
+    }
+    if (asyncGroups.hasError) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro: ${asyncGroups.error}')),
+        );
+      }
+      return;
+    }
+    final groups = List<GroupModel>.from(asyncGroups.value ?? const []);
+    groups.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text(
+                  'Grupo da tarefa (opcional)',
+                  style: Theme.of(ctx).textTheme.titleMedium,
+                ),
+              ),
+              ListTile(
+                leading: Icon(Icons.person_outline, color: Colors.grey.shade700),
+                title: const Text('Nenhum'),
+                subtitle: const Text('Tarefa só para si'),
+                trailing: _selectedGroupForNewTask == null
+                    ? const Icon(Icons.check, color: AppTheme.brandPrimary)
+                    : null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _applyPickedGroup(null);
+                },
+              ),
+              const Divider(height: 1),
+              if (groups.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Ainda não tem grupos. Crie um no separador Grupos.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey.shade700),
+                  ),
+                )
+              else
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(ctx).height * 0.45,
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: groups.length,
+                    itemBuilder: (_, i) {
+                      final g = groups[i];
+                      final sel = _selectedGroupForNewTask?.id == g.id;
+                      final tint = parseAppHexColor(g.color);
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: tint.withValues(alpha: 0.2),
+                          child: Icon(groupIconFromKey(g.icon), color: tint),
+                        ),
+                        title: Text(g.name),
+                        subtitle: g.isPersonal
+                            ? const Text('Grupo pessoal')
+                            : null,
+                        trailing: sel
+                            ? const Icon(Icons.check, color: AppTheme.brandPrimary)
+                            : null,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _applyPickedGroup(g);
+                        },
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _quickMarkComplete() async {
@@ -317,7 +454,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         dueHasTime: dueHasTimeForSave,
         locationTrigger: _reminderType == 'location' ? _locationTrigger : null,
         ownerId: widget.initialTask?.ownerId,
-        groupId: widget.forcedGroupId ?? widget.initialTask?.groupId,
+        groupId: _effectiveGroupId,
         createdBy: widget.initialTask?.createdBy,
         assigneeIds: _showAssignees
             ? _selectedAssigneeIds.toList()
@@ -410,6 +547,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
             name: suggestion.name,
             color: suggestion.color,
           );
+      ref.read(groupTagsCacheProvider.notifier).invalidate(gid);
       if (mounted) {
         setState(() => _selectedTagIds.add(id));
       }
@@ -434,6 +572,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
             name: result.name,
             color: result.color,
           );
+      ref.read(groupTagsCacheProvider.notifier).invalidate(groupId);
       setState(() => _selectedTagIds.add(id));
     } catch (e) {
       if (mounted) {
@@ -580,6 +719,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     BuildContext context,
     AsyncValue<Map<String, UserPublicProfile?>>? profilesAsync,
     User? me,
+    GroupModel? collaborationForAssignees,
   ) {
     final children = <Widget>[];
 
@@ -606,13 +746,18 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       children.add(_buildTagSelectorSection(context));
     }
 
-    if (_showAssigneesSection && _showAssignees && profilesAsync != null) {
+    if (_showAssigneesSection &&
+        _showAssignees &&
+        profilesAsync != null &&
+        collaborationForAssignees != null) {
       if (children.isNotEmpty) {
         children.add(const SizedBox(height: 16));
         children.add(const Divider(height: 1));
         children.add(const SizedBox(height: 12));
       }
-      children.add(_buildAssigneesPanel(context, profilesAsync, me));
+      children.add(
+        _buildAssigneesPanel(context, profilesAsync, me, collaborationForAssignees),
+      );
     }
 
     return Column(
@@ -643,6 +788,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     BuildContext context,
     AsyncValue<Map<String, UserPublicProfile?>> profilesAsync,
     User? me,
+    GroupModel group,
   ) {
     final theme = Theme.of(context);
     return Column(
@@ -673,7 +819,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
           data: (profileMap) => Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: widget.collaborationGroup!.members.map((mid) {
+            children: group.members.map((mid) {
               final selected = _selectedAssigneeIds.contains(mid);
               final label = memberDisplayLabel(mid, profileMap);
               return FilterChip(
@@ -715,10 +861,11 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
 
   @override
   Widget build(BuildContext context) {
-    final profilesAsync = _showAssignees
+    final collab = _activeCollaborationGroup;
+    final profilesAsync = collab != null && _showAssignees
         ? ref.watch(
             groupMemberProfilesProvider(
-              memberUidsCacheKey(widget.collaborationGroup!.members),
+              memberUidsCacheKey(collab.members),
             ),
           )
         : null;
@@ -789,7 +936,12 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                 const SizedBox(height: 12),
                 Flexible(
                   child: SingleChildScrollView(
-                    child: _buildOptionalSections(context, profilesAsync, me),
+                    child: _buildOptionalSections(
+                      context,
+                      profilesAsync,
+                      me,
+                      collab,
+                    ),
                   ),
                 ),
               ],
@@ -809,6 +961,15 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                     selected: _reminderType != 'none',
                     onTap: _openScheduleDialog,
                   ),
+                  if (!_isEditing &&
+                      (widget.forcedGroupId == null ||
+                          widget.forcedGroupId!.trim().isEmpty))
+                    _iconBarItem(
+                      icon: Icons.group_outlined,
+                      tooltip: 'Grupo',
+                      selected: _selectedGroupForNewTask != null,
+                      onTap: _openGroupPickerSheet,
+                    ),
                   if (_showTagSelector)
                     _iconBarItem(
                       icon: Icons.label_outline,

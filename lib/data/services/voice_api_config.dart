@@ -7,14 +7,57 @@ abstract final class VoiceApiConfig {
       String.fromEnvironment('OPENROUTER_API_KEY', defaultValue: '');
   static const String openRouterModel = String.fromEnvironment(
     'OPENROUTER_MODEL',
-    defaultValue: 'openai/gpt-4o-mini',
+    defaultValue: 'google/gemini-2.0-flash-001',
   );
   static const String openRouterHttpReferer = String.fromEnvironment(
     'OPENROUTER_HTTP_REFERER',
     defaultValue: 'https://localhost',
   );
 
+  /// `groq` (default) ou `openrouter`.
+  static const String voiceLlmProvider = String.fromEnvironment(
+    'VOICE_LLM_PROVIDER',
+    defaultValue: 'groq',
+  );
+
+  static const String groqChatModel = String.fromEnvironment(
+    'GROQ_CHAT_MODEL',
+    defaultValue: 'llama-3.1-8b-instant',
+  );
+
+  static const String groqChatModelQuality = String.fromEnvironment(
+    'GROQ_CHAT_MODEL_QUALITY',
+    defaultValue: 'llama-3.3-70b-versatile',
+  );
+
   static bool get hasGroqKey => groqApiKey.trim().isNotEmpty;
   static bool get hasOpenRouterKey => openRouterApiKey.trim().isNotEmpty;
-  static bool get isConfigured => hasGroqKey && hasOpenRouterKey;
+
+  static bool get usesGroqLlm =>
+      voiceLlmProvider.trim().toLowerCase() != 'openrouter';
+
+  static bool get hasLlmConfigured =>
+      usesGroqLlm ? hasGroqKey : hasOpenRouterKey;
+
+  /// STT (Groq) + LLM conforme [voiceLlmProvider].
+  static bool get isConfigured => hasGroqKey && hasLlmConfigured;
+
+  static String get activeLlmProviderLabel =>
+      usesGroqLlm ? 'groq' : 'openrouter';
+
+  static String get activeChatModel =>
+      usesGroqLlm ? groqChatModel : openRouterModel;
+
+  static String configurationHint() {
+    if (!hasGroqKey) {
+      return 'Defina GROQ_API_KEY em secrets.json (transcrição de áudio).';
+    }
+    if (!hasLlmConfigured) {
+      if (usesGroqLlm) {
+        return 'GROQ_API_KEY em falta para o LLM (ou defina VOICE_LLM_PROVIDER=openrouter).';
+      }
+      return 'Defina OPENROUTER_API_KEY ou use VOICE_LLM_PROVIDER=groq.';
+    }
+    return '';
+  }
 }

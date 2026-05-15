@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../constants/voice_task_extraction_prompt.dart';
 import '../models/extracted_voice_task_dto.dart';
 import '../models/tag_model.dart';
-import '../../utils/title_search_key.dart';
+import 'voice/voice_tag_assignment_parser.dart';
 import 'voice_api_config.dart';
 
 class OpenRouterVoiceTaskService {
@@ -19,11 +19,13 @@ class OpenRouterVoiceTaskService {
   /// [groupNames] nomes canónicos dos grupos do utilizador.
   /// [referenceDate] dia civil local (YYYY-MM-DD).
   /// [contextGroupName] nome do grupo se o fluxo foi aberto dentro desse grupo.
+  /// [tagsByGroupName] nomes de etiquetas por nome de grupo (omitir grupos sem tags).
   Future<List<ExtractedVoiceTaskDto>> extractTasks({
     required String transcript,
     required List<String> groupNames,
     required String referenceDate,
     String? contextGroupName,
+    Map<String, List<String>> tagsByGroupName = const {},
   }) async {
     if (!VoiceApiConfig.hasOpenRouterKey) {
       throw StateError(
@@ -35,12 +37,15 @@ class OpenRouterVoiceTaskService {
     final contextLine = contextGroupName != null && contextGroupName.trim().isNotEmpty
         ? 'Grupo de contexto do ecrã (usa este groupName quando o utilizador não disser outro e for lista de itens nesse grupo): "${contextGroupName.trim()}"\n'
         : '';
+    final tagsLine = tagsByGroupName.isEmpty
+        ? ''
+        : 'Etiquetas por grupo (tagName exacto de uma destas listas ou null):\n${jsonEncode(tagsByGroupName)}\n';
 
     final userContent = '''
 Data de referência (hoje no dispositivo): $referenceDate
 $contextLine
 Grupos existentes (usa exactamente um destes nomes em groupName ou null): $groupsJson
-
+$tagsLine
 Texto transcrito:
 $transcript
 ''';
@@ -181,66 +186,27 @@ $ctxBlock
     final first = choices.first as Map;
     final msg = first['message'] as Map;
     final content = msg['content']?.toString() ?? '';
-    return parseTagAssignmentsResponse(content, itemTitles.length, tags, itemTitles);
+    return VoiceTagAssignmentParser.parseTagAssignmentsResponse(
+      content,
+      itemTitles.length,
+      tags,
+      itemTitles,
+    );
   }
 
-  /// Para testes e reutilização: interpreta o JSON do modelo.
+  /// Para testes: delega ao parser partilhado.
   static List<String?> parseTagAssignmentsResponse(
     String raw,
     int expectedCount,
     List<TagModel> allowedTags,
     List<String> itemTitles,
-  ) {
-    final trimmed = raw.trim();
-    final start = trimmed.indexOf('{');
-    final end = trimmed.lastIndexOf('}');
-    if (start < 0 || end <= start) {
-      return List<String?>.filled(expectedCount, null);
-    }
-    final decoded = jsonDecode(trimmed.substring(start, end + 1));
-    if (decoded is! Map<String, dynamic>) {
-      return List<String?>.filled(expectedCount, null);
-    }
-    final arr = decoded['assignments'];
-    if (arr is! List) {
-      return List<String?>.filled(expectedCount, null);
-    }
-
-    final allowedNames = {
-      for (final t in allowedTags) normalizeTitleSearchKey(t.name): t.name,
-    };
-
-    String? canonicalTagName(String? rawName) {
-      if (rawName == null) return null;
-      final s = rawName.trim();
-      if (s.isEmpty || s.toLowerCase() == 'null') return null;
-      return allowedNames[normalizeTitleSearchKey(s)];
-    }
-
-    final byNormTitle = <String, String?>{};
-    for (final e in arr) {
-      if (e is! Map) continue;
-      final m = Map<String, dynamic>.from(e);
-      final title = (m['title'] ?? m['titulo'])?.toString().trim() ?? '';
-      if (title.isEmpty) continue;
-      final tn = m['tagName'] ?? m['tag'];
-      final tagStr = tn?.toString().trim();
-      byNormTitle[normalizeTitleSearchKey(title)] =
-          canonicalTagName(tagStr);
-    }
-
-    final out = <String?>[];
-    for (final t in itemTitles) {
-      out.add(byNormTitle[normalizeTitleSearchKey(t)]);
-    }
-    while (out.length < expectedCount) {
-      out.add(null);
-    }
-    if (out.length > expectedCount) {
-      return out.sublist(0, expectedCount);
-    }
-    return out;
-  }
+  ) =>
+      VoiceTagAssignmentParser.parseTagAssignmentsResponse(
+        raw,
+        expectedCount,
+        allowedTags,
+        itemTitles,
+      );
 
   void close() {
     _client.close();
