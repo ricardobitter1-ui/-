@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../../business_logic/voice_intent_router.dart';
+import '../../business_logic/voice_shopping_list_context.dart';
 import '../../business_logic/voice_reminder_heuristic_parser.dart';
 import '../../business_logic/voice_tag_resolver.dart';
 import '../../business_logic/voice_task_duplicate_finder.dart';
@@ -95,6 +96,7 @@ class VoiceTaskPipeline {
       transcript: transcript,
       hasForcedGroup: hasForcedGroup,
       contextGroupName: contextGroupName,
+      forcedGroupName: forcedGroupName,
     );
 
     await VoicePerfLogger.phase(
@@ -127,13 +129,26 @@ class VoiceTaskPipeline {
           tasks: [heuristic.task!],
           transcript: transcript,
           groups: groups,
+          shoppingListItemTitles: VoiceShoppingListContext
+              .shouldUseShoppingItemTitles(
+            forcedGroupName: forcedGroupName,
+            contextGroupName: contextGroupName,
+          ),
+          noteCapture: false,
         );
       }
     }
 
     final mode = classification.mode == VoiceExtractMode.reminder
         ? VoiceExtractMode.reminder
-        : VoiceExtractMode.shoppingOrGeneral;
+        : classification.mode;
+
+    final noteCapture = mode == VoiceExtractMode.noteCapture;
+    final shoppingListItemTitles = !noteCapture &&
+        VoiceShoppingListContext.shouldUseShoppingItemTitles(
+          forcedGroupName: forcedGroupName,
+          contextGroupName: contextGroupName,
+        );
 
     final request = VoiceExtractRequest(
       transcript: transcript,
@@ -142,6 +157,7 @@ class VoiceTaskPipeline {
       contextGroupName: contextGroupName,
       tagsByGroupName: tagsByGroupName,
       forcedGroupName: forcedGroupName,
+      shoppingListItemTitles: shoppingListItemTitles,
       mode: mode,
     );
 
@@ -163,6 +179,8 @@ class VoiceTaskPipeline {
       tasks: dtos,
       transcript: transcript,
       groups: groups,
+      shoppingListItemTitles: shoppingListItemTitles,
+      noteCapture: noteCapture,
     );
   }
 
@@ -170,14 +188,19 @@ class VoiceTaskPipeline {
     required List<ExtractedVoiceTaskDto> tasks,
     required String transcript,
     required List<GroupModel> groups,
+    required bool shoppingListItemTitles,
+    required bool noteCapture,
   }) {
     return tasks
         .map((dto) {
-          final title = VoiceTaskTitleSanitizer.sanitize(
-            dto.title,
-            stripDateHints: dto.date != null,
-            stripTimeHints: dto.time != null,
-          );
+          final title = shoppingListItemTitles
+              ? VoiceTaskTitleSanitizer.sanitizeShoppingItemTitle(dto.title)
+              : VoiceTaskTitleSanitizer.sanitize(
+                  dto.title,
+                  stripDateHints: dto.date != null,
+                  stripTimeHints: dto.time != null,
+                );
+          final description = noteCapture ? dto.description.trim() : dto.description;
           var groupName = dto.groupName?.trim();
           if (groupName == null || groupName.isEmpty) {
             groupName = inferGroupNameFromTranscript(
@@ -185,7 +208,11 @@ class VoiceTaskPipeline {
               groups: groups,
             );
           }
-          return dto.copyWith(title: title, groupName: groupName);
+          return dto.copyWith(
+            title: title,
+            description: description,
+            groupName: groupName,
+          );
         })
         .toList();
   }

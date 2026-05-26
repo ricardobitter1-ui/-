@@ -51,7 +51,8 @@ abstract final class VoicePerfLogger {
 
   static Future<void> summary(Map<String, int> phasesMs) async {
     if (!kDebugMode) return;
-    final wallMs = phasesMs['total'] ?? phasesMs.values.fold<int>(0, (a, b) => a + b);
+    final wallMs =
+        phasesMs['total'] ?? phasesMs.values.fold<int>(0, (a, b) => a + b);
     await phase(
       'SUMMARY',
       elapsedMs: wallMs,

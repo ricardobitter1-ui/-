@@ -9,6 +9,8 @@ class VoiceExtractRequest {
   final Map<String, List<String>> tagsByGroupName;
   /// Quando o ditado é aberto dentro de um grupo: só esse nome no prompt.
   final String? forcedGroupName;
+  /// Prompt e títulos como itens de lista (só nome do produto).
+  final bool shoppingListItemTitles;
   final VoiceExtractMode mode;
 
   const VoiceExtractRequest({
@@ -18,6 +20,7 @@ class VoiceExtractRequest {
     this.contextGroupName,
     this.tagsByGroupName = const {},
     this.forcedGroupName,
+    this.shoppingListItemTitles = false,
     this.mode = VoiceExtractMode.shoppingOrGeneral,
   });
 
