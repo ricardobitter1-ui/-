@@ -451,27 +451,21 @@ class NotificationService {
       }
     }
 
+    // Todas as repetições da mesma ocorrência usam o mesmo ID para que cada
+    // nova notificação substitua a anterior na gaveta (evita empilhamento).
+    final fixedId = baseId + slot;
     while (nextTime != null && slot < maxSlots) {
       if (untilExclusive != null && !nextTime.isBefore(untilExclusive)) break;
       try {
-        // Android sem recorrência: repetição nativa (um ID). Recorrente / iOS / fallback:
-        // vários IDs (ver comentário no ramo nativo acima).
-        await scheduleTaskReminder(
-          baseId + slot,
-          title,
-          body,
-          nextTime,
-          taskId,
-        );
+        await scheduleTaskReminder(fixedId, title, body, nextTime, taskId);
       } catch (e) {
         print('DEBUG NOTIF: falha ao agendar slot $slot: $e');
       }
-      slot++;
       if (repeatInterval == null) break;
       nextTime = nextTime.add(repeatInterval);
     }
 
-    return slot;
+    return slot + 1;
   }
 
   /// Agenda lembretes conforme [task] (datetime + opcional recorrência) ou cancela slots.
