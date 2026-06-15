@@ -22,6 +22,7 @@ const Map<String, String> kLegacyGroupColorToPreset = <String, String>{
   '#FF6B6B': '#E8A0BF',
   '#2EC4B6': '#7DCFB6',
   '#FFB703': '#E8C547',
+  
   '#2B2D42': '#8B95B5',
 };
 

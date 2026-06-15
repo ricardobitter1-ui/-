@@ -1,3 +1,4 @@
+import '../data/models/group_model.dart';
 import 'voice_note_capture_context.dart';
 import 'voice_shopping_list_context.dart';
 
@@ -48,6 +49,8 @@ abstract final class VoiceIntentRouter {
     required bool hasForcedGroup,
     String? contextGroupName,
     String? forcedGroupName,
+    GroupModel? forcedGroup,
+    GroupModel? contextGroup,
   }) {
     final t = transcript.trim();
     if (t.isEmpty) {
@@ -63,6 +66,8 @@ abstract final class VoiceIntentRouter {
     final separatorHits = _listSeparatorPattern.allMatches(t).length;
 
     final isShoppingGroup = VoiceShoppingListContext.shouldUseShoppingItemTitles(
+      forcedGroup: forcedGroup,
+      contextGroup: contextGroup,
       forcedGroupName: forcedGroupName,
       contextGroupName: contextGroupName,
     );

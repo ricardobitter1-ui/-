@@ -3,10 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants/group_color_presets.dart';
 import '../../data/models/group_model.dart';
+import '../../data/models/group_type.dart';
+import 'group_type_picker.dart';
 import '../../data/services/firebase_service.dart';
-import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
 import '../theme/group_icon.dart';
+import 'eximium/eximium.dart';
 
 /// Conteúdo do modal "Novo Grupo". O [TextEditingController] vive no [State]
 /// e é descartado com o sheet — evita `'_dependents.isEmpty'` ao dar dispose
@@ -22,6 +27,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
   late final TextEditingController _nameController;
   String _icon = 'group';
   String _color = kDefaultGroupColorHex;
+  GroupType _type = GroupType.tasks;
 
   @override
   void initState() {
@@ -48,6 +54,7 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
       members: const [],
       admins: const [],
       isPersonal: false,
+      type: _type,
       createdAt: DateTime.now(),
     );
 
@@ -68,32 +75,48 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    final c = context.ex;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: c.surface1,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(ExRadius.xl),
+        ),
+      ),
+      child: SingleChildScrollView(
       child: Padding(
         padding: EdgeInsets.only(
-          top: 20,
-          left: 20,
-          right: 20,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          top: ExSpace.s3,
+          left: ExSpace.s5,
+          right: ExSpace.s5,
+          bottom: MediaQuery.of(context).viewInsets.bottom + ExSpace.s5,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: ExSpace.s4),
+                decoration: BoxDecoration(
+                  color: c.surface3,
+                  borderRadius: BorderRadius.circular(ExRadius.pill),
+                ),
+              ),
+            ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Novo Grupo',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  icon: const Icon(Icons.close),
+                Text('Novo Grupo', style: ExText.h2(c.textPrimary)),
+                _CircleCloseButton(
+                  onTap: () => Navigator.of(context).pop(false),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: ExSpace.s3),
             TextField(
               controller: _nameController,
               decoration: const InputDecoration(
@@ -101,34 +124,44 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
               ),
               textCapitalization: TextCapitalization.sentences,
             ),
-            const SizedBox(height: 16),
-            const Text('Ícone', style: TextStyle(color: Colors.grey)),
-            const SizedBox(height: 8),
+            const SizedBox(height: ExSpace.s4),
+            GroupTypePicker(
+              selected: _type,
+              onSelected: (t) => setState(() {
+                _type = t;
+                if (t == GroupType.continuous && _icon == 'group') {
+                  _icon = 'shopping_cart';
+                }
+              }),
+            ),
+            const SizedBox(height: ExSpace.s4),
+            const ExSectionLabel(label: 'Ícone'),
+            const SizedBox(height: ExSpace.s2),
             GroupIconPickerBar(
               selectedKey: _icon,
               onSelect: (k) => setState(() => _icon = k),
-              selectionBorderColor: AppTheme.brandPrimary,
+              selectionBorderColor: ExColors.brandGreen,
             ),
-            const SizedBox(height: 16),
-            const Text('Cor', style: TextStyle(color: Colors.grey)),
-            const SizedBox(height: 8),
+            const SizedBox(height: ExSpace.s4),
+            const ExSectionLabel(label: 'Cor'),
+            const SizedBox(height: ExSpace.s2),
             Wrap(
-              spacing: 10,
-              runSpacing: 10,
+              spacing: ExSpace.s3 - 2,
+              runSpacing: ExSpace.s3 - 2,
               children: [
-                for (final c in kGroupColorPresets)
+                for (final preset in kGroupColorPresets)
                   GestureDetector(
-                    onTap: () => setState(() => _color = c),
+                    onTap: () => setState(() => _color = preset),
                     child: Container(
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
-                        color: parseAppHexColor(c),
+                        color: parseAppHexColor(preset),
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: normalizeGroupColorHexForLookup(c) ==
+                          color: normalizeGroupColorHexForLookup(preset) ==
                                   normalizeGroupColorHexForLookup(_color)
-                              ? AppTheme.brandPrimary
+                              ? ExColors.brandGreen
                               : Colors.transparent,
                           width: 3,
                         ),
@@ -137,15 +170,40 @@ class _CreateGroupSheetState extends ConsumerState<CreateGroupSheet> {
                   ),
               ],
             ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 54,
-              child: ElevatedButton(
-                onPressed: _submit,
-                child: const Text('Criar Grupo'),
-              ),
+            const SizedBox(height: ExSpace.s5),
+            ExButton(
+              label: 'Criar Grupo',
+              onPressed: _submit,
+              expand: true,
+              size: ExButtonSize.lg,
             ),
           ],
+        ),
+      ),
+      ),
+    );
+  }
+}
+
+/// Botão circular de fechar (surface2 + borda) usado nos sheets de grupo.
+class _CircleCloseButton extends StatelessWidget {
+  const _CircleCloseButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    return Material(
+      color: c.surface2,
+      shape: CircleBorder(side: BorderSide(color: c.border)),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 38,
+          height: 38,
+          child: Icon(Icons.close_rounded, size: 20, color: c.textSecondary),
         ),
       ),
     );

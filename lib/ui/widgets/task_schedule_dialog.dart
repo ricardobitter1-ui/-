@@ -7,7 +7,11 @@ import '../../data/models/task_recurrence.dart';
 import '../../data/services/location_service.dart';
 import '../screens/location_picker_screen.dart';
 import '../screens/task_recurrence_screen.dart';
-import '../theme/app_theme.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_effects.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
+import 'eximium/ex_button.dart';
 
 /// Estado de agendamento devolvido pelo popup (espelha o que o [TaskFormModal] persiste).
 class TaskScheduleDialogResult {
@@ -52,13 +56,12 @@ Future<TaskScheduleDialogResult?> showTaskScheduleDialog(
   WidgetRef ref, {
   required TaskScheduleDialogResult initial,
 }) {
-  return showDialog<TaskScheduleDialogResult>(
+  return showModalBottomSheet<TaskScheduleDialogResult>(
     context: context,
-    barrierDismissible: true,
-    builder: (ctx) => Theme(
-      data: AppTheme.lightTheme,
-      child: TaskScheduleDialog(initial: initial, parentRef: ref),
-    ),
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => TaskScheduleDialog(initial: initial, parentRef: ref),
   );
 }
 
@@ -78,6 +81,16 @@ class TaskScheduleDialog extends StatefulWidget {
 
 class _TaskScheduleDialogState extends State<TaskScheduleDialog> {
   static const int _rangeYearsBack = 365 * 5;
+  static const List<String> _weekdayLabels = [
+    'SEG',
+    'TER',
+    'QUA',
+    'QUI',
+    'SEX',
+    'SÁB',
+    'DOM',
+  ];
+
   late DateTime _firstCal;
   late DateTime _lastCal;
 
@@ -117,22 +130,10 @@ class _TaskScheduleDialogState extends State<TaskScheduleDialog> {
     _displayMonth = DateTime(anchor.year, anchor.month, 1);
   }
 
-  DateTime _calendarInitialDate() {
-    final sel = _selectedDate ?? DateTime.now();
-    if (sel.year == _displayMonth.year && sel.month == _displayMonth.month) {
-      if (sel.isBefore(_firstCal)) return _firstCal;
-      if (sel.isAfter(_lastCal)) return _lastCal;
-      return sel;
-    }
-    final firstOfMonth = DateTime(_displayMonth.year, _displayMonth.month, 1);
-    if (firstOfMonth.isBefore(_firstCal)) return _firstCal;
-    if (firstOfMonth.isAfter(_lastCal)) return _lastCal;
-    return firstOfMonth;
-  }
-
   void _shiftMonth(int delta) {
     setState(() {
-      _displayMonth = DateTime(_displayMonth.year, _displayMonth.month + delta, 1);
+      _displayMonth =
+          DateTime(_displayMonth.year, _displayMonth.month + delta, 1);
     });
   }
 
@@ -153,12 +154,58 @@ class _TaskScheduleDialogState extends State<TaskScheduleDialog> {
     return DateFormat.yMMMM('pt_BR').format(d);
   }
 
+  int _daysInMonth(DateTime month) =>
+      DateTime(month.year, month.month + 1, 0).day;
+
+  List<List<int?>> _buildWeeks() {
+    final first = DateTime(_displayMonth.year, _displayMonth.month, 1);
+    final daysInMonth = _daysInMonth(_displayMonth);
+    final offset = first.weekday - 1;
+    final cells = <int?>[];
+    for (var i = 0; i < offset; i++) {
+      cells.add(null);
+    }
+    for (var d = 1; d <= daysInMonth; d++) {
+      cells.add(d);
+    }
+    while (cells.length % 7 != 0) {
+      cells.add(null);
+    }
+    final weeks = <List<int?>>[];
+    for (var i = 0; i < cells.length; i += 7) {
+      weeks.add(cells.sublist(i, i + 7));
+    }
+    return weeks;
+  }
+
+  bool _isDaySelectable(int day) {
+    final d = DateTime(_displayMonth.year, _displayMonth.month, day);
+    return !d.isBefore(_firstCal) && !d.isAfter(_lastCal);
+  }
+
+  bool _isDaySelected(int day) {
+    final sel = _selectedDate;
+    if (sel == null) return false;
+    return sel.year == _displayMonth.year &&
+        sel.month == _displayMonth.month &&
+        sel.day == day;
+  }
+
+  void _onDayTap(int day) {
+    if (!_isDaySelectable(day)) return;
+    setState(() {
+      _selectedDate = DateTime(_displayMonth.year, _displayMonth.month, day);
+      _reminderType = 'datetime';
+      _locationLat = null;
+      _locationLng = null;
+      _locationLabel = null;
+    });
+  }
+
   Future<void> _pickTime() async {
     final t = await showTimePicker(
       context: context,
       initialTime: _selectedTime ?? TimeOfDay.now(),
-      builder: (context, child) =>
-          Theme(data: AppTheme.lightTheme, child: child!),
     );
     if (t != null && mounted) {
       setState(() {
@@ -284,39 +331,60 @@ class _TaskScheduleDialogState extends State<TaskScheduleDialog> {
     Navigator.of(context).pop(_buildResult());
   }
 
+  /// Resumo curto do agendamento atual (chip verde no topo).
+  String? _scheduleSummary() {
+    if (_reminderType == 'location') {
+      if (_locationLabel != null && _locationLabel!.trim().isNotEmpty) {
+        return _locationLabel!.trim();
+      }
+      if (_locationLat != null && _locationLng != null) {
+        return 'Local · ${_locationRadiusMeters.round()} m';
+      }
+      return null;
+    }
+    if (_reminderType == 'datetime' && _selectedDate != null) {
+      final parts = <String>[];
+      parts.add(DateFormat('EEE, d MMM', 'pt_BR').format(_selectedDate!));
+      if (_dueHasTime && _selectedTime != null) {
+        parts.add(_selectedTime!.format(context));
+      }
+      if (_recurrence != null) {
+        parts.add(taskRecurrenceSummary(_recurrence));
+      }
+      return parts.join(' · ');
+    }
+    return null;
+  }
+
   Widget _locationDetail() {
+    final c = context.ex;
     final theme = Theme.of(context);
     final hasPoint = _locationLat != null && _locationLng != null;
     final summary = hasPoint
         ? '${_locationLat!.toStringAsFixed(5)}, ${_locationLng!.toStringAsFixed(5)} · ${_locationRadiusMeters.round()} m'
         : 'Nenhum ponto escolhido';
     final labelLine =
-        (_locationLabel != null && _locationLabel!.isNotEmpty) ? _locationLabel! : null;
+        (_locationLabel != null && _locationLabel!.isNotEmpty)
+            ? _locationLabel!
+            : null;
 
     return Container(
       padding: const EdgeInsets.all(12),
-      margin: const EdgeInsets.only(top: 8, bottom: 8),
+      margin: const EdgeInsets.only(top: ExSpace.s3),
       decoration: BoxDecoration(
-        color: AppTheme.brandPrimary.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
+        color: ExColors.brandGreen.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(ExRadius.md),
+        border: Border.all(color: c.borderAccent),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Geofence (Android)',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: AppTheme.brandPrimary,
-            ),
-          ),
+          Text('Geofence (Android)', style: ExText.h3(c.textAccent)),
           const SizedBox(height: 6),
           Text(
             'O app avisa ao entrar ou sair da área. '
             'No máximo $kMaxRegisteredGeofences lembretes ativos por dispositivo.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(color: c.textSecondary),
           ),
           const SizedBox(height: 10),
           Row(
@@ -371,170 +439,457 @@ class _TaskScheduleDialogState extends State<TaskScheduleDialog> {
     return 'Toque para escolher no mapa';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      clipBehavior: Clip.antiAlias,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 400,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+  Widget _buildHandle(ExColors c) {
+    return Center(
+      child: Container(
+        width: 40,
+        height: 5,
+        decoration: BoxDecoration(
+          color: c.surface3,
+          borderRadius: BorderRadius.circular(ExRadius.pill),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      ),
+    );
+  }
+
+  Widget _buildCircleIconButton({
+    required ExColors c,
+    required IconData icon,
+    required VoidCallback? onPressed,
+  }) {
+    return Material(
+      color: c.surface2,
+      shape: CircleBorder(side: BorderSide(color: c.border)),
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 34,
+          height: 34,
+          child: Icon(
+            icon,
+            size: 18,
+            color: onPressed == null ? c.textMuted : c.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthCalendar(ExColors c) {
+    final weeks = _buildWeeks();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: _canGoPrev ? () => _shiftMonth(-1) : null,
-                    icon: const Icon(Icons.chevron_left_rounded),
-                  ),
-                  Expanded(
-                    child: Text(
-                      _monthTitle(),
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF2B2D42),
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: _canGoNext ? () => _shiftMonth(1) : null,
-                    icon: const Icon(Icons.chevron_right_rounded),
-                  ),
-                ],
+            _buildCircleIconButton(
+              c: c,
+              icon: Icons.chevron_left_rounded,
+              onPressed: _canGoPrev ? () => _shiftMonth(-1) : null,
+            ),
+            Expanded(
+              child: Text(
+                _monthTitle(),
+                textAlign: TextAlign.center,
+                style: ExText.h3(c.textPrimary),
               ),
             ),
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.55,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    CalendarDatePicker(
-                      key: ValueKey(
-                        '${_displayMonth.year}-${_displayMonth.month}',
-                      ),
-                      initialDate: _calendarInitialDate(),
-                      firstDate: _firstCal,
-                      lastDate: _lastCal,
-                      onDateChanged: (d) {
-                        setState(() {
-                          _selectedDate = d;
-                          _reminderType = 'datetime';
-                          _locationLat = null;
-                          _locationLng = null;
-                          _locationLabel = null;
-                        });
-                      },
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.access_time_rounded),
-                      title: const Text('Definir hora'),
-                      subtitle: Text(
-                        _dueHasTime && _selectedTime != null
-                            ? _selectedTime!.format(context)
-                            : 'Opcional — sem hora',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF6C757D),
-                        ),
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_dueHasTime)
-                            TextButton(
-                              onPressed: () {
-                                setState(() {
-                                  _selectedTime = null;
-                                  _dueHasTime = false;
-                                });
-                              },
-                              child: const Text('Remover'),
-                            ),
-                          TextButton(
-                            onPressed: _pickTime,
-                            child: const Text('Definir'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.repeat_rounded),
-                      title: const Text('Repetição'),
-                      subtitle: Text(
-                        taskRecurrenceSummary(_recurrence),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF6C757D),
-                        ),
-                      ),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: _openRecurrence,
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.place_outlined),
-                      title: const Text('Localização'),
-                      subtitle: Text(
-                        _locationSubtitle(),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF6C757D),
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: _openMap,
-                    ),
-                    if (_reminderType == 'location') _locationDetail(),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: _clearAll,
-                        icon: const Icon(Icons.notifications_off_outlined, size: 20),
-                        label: const Text('Limpar agendamento'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 16, 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppTheme.brandPrimary,
-                    ),
-                    child: const Text('Cancelar'),
-                  ),
-                  TextButton(
-                    onPressed: _onConfirm,
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppTheme.brandPrimary,
-                    ),
-                    child: const Text('Concluído'),
-                  ),
-                ],
-              ),
+            _buildCircleIconButton(
+              c: c,
+              icon: Icons.chevron_right_rounded,
+              onPressed: _canGoNext ? () => _shiftMonth(1) : null,
             ),
           ],
         ),
+        const SizedBox(height: ExSpace.s3),
+        Row(
+          children: _weekdayLabels
+              .map(
+                (label) => Expanded(
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: ExText.label(c.textMuted),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: ExSpace.s2),
+        ...weeks.map((week) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Row(
+              children: week.map((day) => Expanded(child: _buildDayCell(c, day))).toList(),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildDayCell(ExColors c, int? day) {
+    if (day == null) {
+      return const SizedBox(height: 36);
+    }
+
+    final date = DateTime(_displayMonth.year, _displayMonth.month, day);
+    final selectable = _isDaySelectable(day);
+    final selected = _isDaySelected(day);
+    final isSunday = date.weekday == DateTime.sunday;
+
+    Color textColor;
+    if (selected) {
+      textColor = ExColors.onBrandGreen;
+    } else if (!selectable) {
+      textColor = c.textMuted.withValues(alpha: 0.5);
+    } else if (isSunday) {
+      textColor = c.textMuted;
+    } else {
+      textColor = c.textSecondary;
+    }
+
+    Widget dayChild = Text(
+      '$day',
+      style: ExText.bodyLg(textColor).copyWith(
+        fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+        fontSize: 14,
+      ),
+    );
+
+    if (selected) {
+      dayChild = DecoratedBox(
+        decoration: BoxDecoration(
+          color: ExColors.brandGreen,
+          shape: BoxShape.circle,
+          boxShadow: ExEffects.glowMd,
+        ),
+        child: SizedBox(
+          width: 34,
+          height: 34,
+          child: Center(child: dayChild),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 36,
+      child: Center(
+        child: selectable
+            ? InkWell(
+                onTap: () => _onDayTap(day),
+                customBorder: const CircleBorder(),
+                child: dayChild,
+              )
+            : dayChild,
+      ),
+    );
+  }
+
+  Widget _buildIconTile({
+    required Color bg,
+    required Color fg,
+    required IconData icon,
+  }) {
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(icon, size: 18, color: fg),
+    );
+  }
+
+  Widget _buildGroupedDivider(ExColors c) {
+    return Divider(
+      height: 1,
+      thickness: 1,
+      color: c.border,
+      indent: 60,
+    );
+  }
+
+  Widget _buildGroupedOptions(ExColors c) {
+    final timeValue = _dueHasTime && _selectedTime != null
+        ? _selectedTime!.format(context)
+        : null;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface2,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: c.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          InkWell(
+            onTap: _pickTime,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 13,
+              ),
+              child: Row(
+                children: [
+                  _buildIconTile(
+                    bg: ExColors.brandGreen.withValues(alpha: 0.14),
+                    fg: c.textAccent,
+                    icon: Icons.access_time_rounded,
+                  ),
+                  const SizedBox(width: ExSpace.s3),
+                  Expanded(
+                    child: Text('Hora', style: ExText.h3(c.textPrimary)),
+                  ),
+                  if (timeValue != null) ...[
+                    Text(
+                      timeValue,
+                      style: ExText.mono(size: 14, color: c.textPrimary),
+                    ),
+                    const SizedBox(width: ExSpace.s1),
+                    _buildClearTimeButton(c),
+                  ] else
+                    Text(
+                      'Opcional — sem hora',
+                      style: ExText.body(c.textSecondary),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          _buildGroupedDivider(c),
+          InkWell(
+            onTap: _openRecurrence,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 13,
+              ),
+              child: Row(
+                children: [
+                  _buildIconTile(
+                    bg: ExColors.lavender.withValues(alpha: 0.14),
+                    fg: ExColors.lavender,
+                    icon: Icons.repeat_rounded,
+                  ),
+                  const SizedBox(width: ExSpace.s3),
+                  Expanded(
+                    child: Text('Repetição', style: ExText.h3(c.textPrimary)),
+                  ),
+                  Text(
+                    taskRecurrenceSummary(_recurrence),
+                    style: ExText.body(c.textSecondary)
+                        .copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(Icons.chevron_right_rounded, color: c.textMuted, size: 18),
+                ],
+              ),
+            ),
+          ),
+          _buildGroupedDivider(c),
+          InkWell(
+            onTap: _openMap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 13,
+              ),
+              child: Row(
+                children: [
+                  _buildIconTile(
+                    bg: c.surface3,
+                    fg: c.textSecondary,
+                    icon: Icons.place_outlined,
+                  ),
+                  const SizedBox(width: ExSpace.s3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Localização', style: ExText.h3(c.textPrimary)),
+                        const SizedBox(height: 1),
+                        Text(
+                          _locationSubtitle(),
+                          style: ExText.small(c.textMuted),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: c.textMuted, size: 18),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildClearTimeButton(ExColors c) {
+    return Material(
+      color: c.surface3,
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _selectedTime = null;
+            _dueHasTime = false;
+          });
+        },
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 26,
+          height: 26,
+          child: Icon(Icons.close_rounded, size: 13, color: c.textSecondary),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryChip(ExColors c, String summary) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 7,
+      ),
+      decoration: BoxDecoration(
+        color: ExColors.brandGreen.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(ExRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.schedule_rounded, size: 15, color: c.textAccent),
+          const SizedBox(width: ExSpace.s2),
+          Flexible(
+            child: Text(
+              summary,
+              overflow: TextOverflow.ellipsis,
+              style: ExText.mono(size: 13, color: c.textAccent)
+                  .copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    final summary = _scheduleSummary();
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.92;
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      decoration: BoxDecoration(
+        color: c.surface1,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(ExRadius.xl),
+        ),
+        boxShadow: c.shadowFloat,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(ExSpace.s5, ExSpace.s3, ExSpace.s5, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHandle(c),
+                const SizedBox(height: ExSpace.s4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Agendar lembrete',
+                        style: ExText.h2(c.textPrimary),
+                      ),
+                    ),
+                    _buildCircleIconButton(
+                      c: c,
+                      icon: Icons.close_rounded,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                if (summary != null) ...[
+                  const SizedBox(height: ExSpace.s4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _buildSummaryChip(c, summary),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                ExSpace.s5,
+                ExSpace.s4,
+                ExSpace.s5,
+                ExSpace.s2,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildMonthCalendar(c),
+                  const SizedBox(height: ExSpace.s4),
+                  _buildGroupedOptions(c),
+                  if (_reminderType == 'location') _locationDetail(),
+                  const SizedBox(height: ExSpace.s3),
+                  ExButton(
+                    label: 'Limpar agendamento',
+                    icon: Icons.notifications_off_outlined,
+                    variant: ExButtonVariant.danger,
+                    expand: true,
+                    onPressed: _clearAll,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Divider(height: 1, color: c.border),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              ExSpace.s5,
+              ExSpace.s3,
+              ExSpace.s5,
+              ExSpace.s4 + bottom,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ExButton(
+                    label: 'Cancelar',
+                    variant: ExButtonVariant.secondary,
+                    expand: true,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: ExSpace.s3),
+                Expanded(
+                  child: ExButton(
+                    label: 'Concluído',
+                    variant: ExButtonVariant.primary,
+                    expand: true,
+                    onPressed: _onConfirm,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

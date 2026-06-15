@@ -43,10 +43,15 @@ abstract final class VoiceExtractPromptBuilder {
     final noteLine = isNote
         ? 'Modo nota: "title" = Área: problema; "description" = texto sucinto polido (1-4 frases), sem inventar factos.\n'
         : '';
+    final tagHintLine = tags.isNotEmpty && !req.shoppingListItemTitles
+        ? 'Se eu pedir explicitamente uma tag/categoria/etiqueta, preenche tagName e tagExplicit=true. '
+            'Se o nome já estiver em "Etiquetas por grupo", liga com tagExplicit=true ou false; '
+            'se não existir mas eu pedi, tagExplicit=true.\n'
+        : '';
 
     return '''
 Data de referência (hoje no dispositivo): ${req.referenceDate}
-$noteLine$shoppingLine$contextLine$forcedLine
+$noteLine$shoppingLine$tagHintLine$contextLine$forcedLine
 Grupos existentes (usa exactamente um destes nomes em groupName ou null): $groupsJson
 $tagsLine
 Texto transcrito:

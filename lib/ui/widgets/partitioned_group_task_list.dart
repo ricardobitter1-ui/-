@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../business_logic/complete_task_action.dart';
+import '../../business_logic/completed_tasks_sort.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../business_logic/task_list_partition.dart';
 import '../../business_logic/task_occurrence_display.dart';
@@ -14,8 +15,13 @@ import '../../data/models/user_public_profile.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../../utils/title_search_key.dart';
+import '../theme/color_utils.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
 import 'completed_section_tag_filter_bar.dart';
 import 'completed_tasks_section_header.dart';
+import 'eximium/eximium.dart';
 import 'task_appear_motion.dart';
 import 'task_card.dart';
 import 'task_form_modal.dart';
@@ -154,44 +160,13 @@ class _PartitionedGroupTaskListState
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) => TaskFormModal(
         initialTask: task,
         forcedGroupId: widget.group.id,
         collaborationGroup: widget.group,
       ),
     );
-  }
-
-  Future<void> _confirmAndDeleteTask(
-    BuildContext context,
-    TaskModel task,
-  ) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Apagar tarefa?'),
-        content: Text(
-          'A tarefa "${task.title}" será removida. Pode tocar em Desfazer na mensagem que aparece em seguida.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Apagar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !context.mounted) return;
-    await _deleteTask(context, task);
   }
 
   Future<void> _deleteTask(BuildContext context, TaskModel task) async {
@@ -270,7 +245,7 @@ class _PartitionedGroupTaskListState
               child: Icon(
                 Icons.expand_more_rounded,
                 size: 22,
-                color: Colors.grey.shade700,
+                color: context.ex.textSecondary,
               ),
             ),
             const SizedBox(width: 4),
@@ -282,57 +257,32 @@ class _PartitionedGroupTaskListState
   }
 
   Widget _tagTitleRow(TagModel tag, int count) {
+    final c = context.ex;
     return Row(
       children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: Color(tag.color),
-            shape: BoxShape.circle,
-          ),
-        ),
+        ExDot(color: Color(tag.color), size: 10),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(
-            tag.name,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-            ),
-          ),
+          child: Text(tag.name, style: ExText.h3(c.textPrimary)),
         ),
         Text(
           '$count',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: Colors.grey.shade600,
-          ),
+          style: ExText.mono(size: 13, color: c.textSecondary),
         ),
       ],
     );
   }
 
   Widget _semEtiquetaTitleRow(BuildContext context, int count) {
+    final c = context.ex;
     return Row(
       children: [
         Expanded(
-          child: Text(
-            'Sem etiqueta',
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-            ),
-          ),
+          child: Text('Sem etiqueta', style: ExText.h3(c.textPrimary)),
         ),
         Text(
           '$count',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: Colors.grey.shade600,
-          ),
+          style: ExText.mono(size: 13, color: c.textSecondary),
         ),
       ],
     );
@@ -355,11 +305,117 @@ class _PartitionedGroupTaskListState
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Esta série não tem ocorrência neste dia.',
+            'Essa tarefa não se repete neste dia.',
           ),
         ),
       );
     }
+  }
+
+  List<Widget> _buildCompletedByTag(
+    BuildContext context,
+    List<TaskModel> completed,
+    Map<String, UserPublicProfile?> profileMap,
+    User? me,
+    DateTime calendarDay,
+  ) {
+    final tagById = {for (final t in widget.tags) t.id: t};
+
+    final tagIdsInUse = <String>{};
+    for (final t in completed) {
+      for (final id in t.tagIds) {
+        if (tagById.containsKey(id)) tagIdsInUse.add(id);
+      }
+    }
+    final sortedTagIds = tagIdsInUse.toList()
+      ..sort(
+        (a, b) => tagById[a]!
+            .name
+            .toLowerCase()
+            .compareTo(tagById[b]!.name.toLowerCase()),
+      );
+
+    final semTag =
+        completed.where((t) => !_hasResolvedTag(t, tagById)).toList();
+    final out = <Widget>[];
+
+    for (final tid in sortedTagIds) {
+      final tag = tagById[tid]!;
+      final expanded = !_collapsedSectionKeys.contains('c-$tid');
+      final countInTag = completed.where((t) => t.tagIds.contains(tid)).length;
+      out.add(
+        _collapsibleSectionHeader(
+          sectionKey: 'c-$tid',
+          expanded: expanded,
+          titleRow: _tagTitleRow(tag, countInTag),
+        ),
+      );
+      if (expanded) {
+        for (final task in completed.where((t) => t.tagIds.contains(tid))) {
+          out.add(_completedTaskCard(
+            context,
+            task,
+            profileMap,
+            me,
+            calendarDay,
+          ));
+          out.add(const SizedBox(height: 10));
+        }
+      }
+    }
+
+    if (semTag.isNotEmpty) {
+      final expanded =
+          !_collapsedSectionKeys.contains('c-$_kSemEtiquetaSection');
+      out.add(
+        _collapsibleSectionHeader(
+          sectionKey: 'c-$_kSemEtiquetaSection',
+          expanded: expanded,
+          titleRow: _semEtiquetaTitleRow(context, semTag.length),
+        ),
+      );
+      if (expanded) {
+        for (final task in semTag) {
+          out.add(_completedTaskCard(
+            context,
+            task,
+            profileMap,
+            me,
+            calendarDay,
+          ));
+          out.add(const SizedBox(height: 10));
+        }
+      }
+    }
+
+    return out;
+  }
+
+  Widget _completedTaskCard(
+    BuildContext context,
+    TaskModel task,
+    Map<String, UserPublicProfile?> profileMap,
+    User? me,
+    DateTime calendarDay,
+  ) {
+    return TaskAppearMotion(
+      key: ValueKey('g-${widget.group.id}-c-${task.id}'),
+      child: TaskCard(
+        task: task,
+        groupAccentColor: parseAppHexColor(widget.group.color),
+        groupIconKey: widget.group.icon,
+        tagChips: _tagsForTask(task),
+        displayDueOverride: displayDueForTaskOnCalendarDay(task, calendarDay),
+        isCompletedOverride:
+            isOccurrenceCompletedOnCalendarDay(task, calendarDay),
+        assigneeProfiles: profileMap,
+        selfUid: me?.uid,
+        selfPhotoUrl: me?.photoURL,
+        onToggle: () => _toggleGroupTask(context, task, calendarDay),
+        onEdit: () => _openEdit(context, task),
+        onDelete: () => _deleteTask(context, task),
+      ),
+    );
   }
 
   List<Widget> _buildActiveByTag(
@@ -407,6 +463,8 @@ class _PartitionedGroupTaskListState
               key: ValueKey('g-${widget.group.id}-a-${task.id}-$tid'),
               child: TaskCard(
                 task: task,
+                groupAccentColor: parseAppHexColor(widget.group.color),
+                groupIconKey: widget.group.icon,
                 displayDueOverride:
                     displayDueForTaskOnCalendarDay(task, calendarDay),
                 isCompletedOverride:
@@ -416,7 +474,7 @@ class _PartitionedGroupTaskListState
                 selfPhotoUrl: me?.photoURL,
                 onToggle: () => _toggleGroupTask(context, task, calendarDay),
                 onEdit: () => _openEdit(context, task),
-                onDelete: () => _confirmAndDeleteTask(context, task),
+                onDelete: () => _deleteTask(context, task),
               ),
             ),
           );
@@ -441,6 +499,8 @@ class _PartitionedGroupTaskListState
               key: ValueKey('g-${widget.group.id}-a-${task.id}-sem'),
               child: TaskCard(
                 task: task,
+                groupAccentColor: parseAppHexColor(widget.group.color),
+                groupIconKey: widget.group.icon,
                 displayDueOverride:
                     displayDueForTaskOnCalendarDay(task, calendarDay),
                 isCompletedOverride:
@@ -450,7 +510,7 @@ class _PartitionedGroupTaskListState
                 selfPhotoUrl: me?.photoURL,
                 onToggle: () => _toggleGroupTask(context, task, calendarDay),
                 onEdit: () => _openEdit(context, task),
-                onDelete: () => _confirmAndDeleteTask(context, task),
+                onDelete: () => _deleteTask(context, task),
               ),
             ),
           );
@@ -473,13 +533,17 @@ class _PartitionedGroupTaskListState
 
     final (:active, :completed) =
         partitionTasksByCompletionForCalendarDay(widget.tasks, today);
+    final completedSorted = List<TaskModel>.from(completed);
+    if (widget.group.typeConfig.reAdd) {
+      sortCompletedByRecency(completedSorted);
+    }
     final q = normalizeTitleSearchKey(_searchController.text);
     final activeFiltered = q.isEmpty
         ? active
         : active.where((t) => t.titleSearchKey.contains(q)).toList();
     final completedFiltered = q.isEmpty
-        ? completed
-        : completed.where((t) => t.titleSearchKey.contains(q)).toList();
+        ? completedSorted
+        : completedSorted.where((t) => t.titleSearchKey.contains(q)).toList();
 
     final tagById = {for (final t in widget.tags) t.id: t};
     final sectionKeys = _allActiveSectionKeys(activeFiltered, tagById);
@@ -541,24 +605,30 @@ class _PartitionedGroupTaskListState
             padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
             child: Text(
               'Nenhuma tarefa ativa corresponde à pesquisa.',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+              style: ExText.bodyLg(context.ex.textSecondary),
             ),
           ),
         if (showEmptyGroup)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(0, 16, 0, 24),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
             child: Text(
               kEmptyGroupTasksMessage,
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 16),
+              style: ExText.bodyLg(context.ex.textSecondary),
             ),
           ),
+        if (activeFiltered.isNotEmpty) ...[
+          const SizedBox(height: ExSpace.s4),
+          ExSectionLabel(label: 'Pendentes', count: activeFiltered.length),
+          const SizedBox(height: ExSpace.s2),
+        ],
         ..._buildActiveByTag(context, activeFiltered, profileMap, me, today),
         if (completed.isNotEmpty) ...[
           const SizedBox(height: 6),
           CompletedTasksSectionHeader(
             expanded: _completedExpanded,
             count: completedVisible.length,
+            title: widget.group.typeConfig.completionLabel,
             onToggle: () async {
               final next = !_completedExpanded;
               setState(() => _completedExpanded = next);
@@ -579,28 +649,20 @@ class _PartitionedGroupTaskListState
                 padding: const EdgeInsets.only(top: 8, bottom: 24),
                 child: Text(
                   'Nenhuma tarefa concluída com esta etiqueta.',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                  style: ExText.bodyLg(context.ex.textSecondary),
                 ),
+              )
+            else if (widget.group.typeConfig.continuous)
+              ..._buildCompletedByTag(
+                context,
+                completedVisible,
+                profileMap,
+                me,
+                today,
               )
             else
               for (final task in completedVisible)
-                TaskAppearMotion(
-                  key: ValueKey('g-${widget.group.id}-c-${task.id}'),
-                  child: TaskCard(
-                    task: task,
-                    tagChips: _tagsForTask(task),
-                    displayDueOverride:
-                        displayDueForTaskOnCalendarDay(task, today),
-                    isCompletedOverride:
-                        isOccurrenceCompletedOnCalendarDay(task, today),
-                    assigneeProfiles: profileMap,
-                    selfUid: me?.uid,
-                    selfPhotoUrl: me?.photoURL,
-                    onToggle: () => _toggleGroupTask(context, task, today),
-                    onEdit: () => _openEdit(context, task),
-                    onDelete: () => _confirmAndDeleteTask(context, task),
-                  ),
-                ),
+                _completedTaskCard(context, task, profileMap, me, today),
           ],
         ],
       ],

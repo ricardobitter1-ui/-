@@ -10,6 +10,7 @@ import 'data/services/notification_service.dart';
 import 'data/services/task_reminder_notification_background.dart';
 import 'ui/widgets/auth_wrapper.dart';
 import 'ui/theme/app_theme.dart';
+import 'ui/theme/theme_mode_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,15 +40,17 @@ void main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
       navigatorKey: rootNavigatorKey,
       title: 'Exm To-Do',
       theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ref.watch(themeModeProvider),
       locale: const Locale('pt', 'BR'),
       supportedLocales: const [Locale('pt', 'BR')],
       localizationsDelegates: const [

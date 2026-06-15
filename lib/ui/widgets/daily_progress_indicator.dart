@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_effects.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
 
 class DailyProgressIndicator extends StatelessWidget {
   final double progress; // 0.0 to 1.0
@@ -11,6 +15,7 @@ class DailyProgressIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.ex;
     final int percentage = (progress * 100).toInt();
 
     return Column(
@@ -19,57 +24,37 @@ class DailyProgressIndicator extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              "Progresso do dia",
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF6C757D),
-              ),
-            ),
-            Text(
-              "$percentage%",
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.brandPrimary,
-              ),
-            ),
+            Text('Progresso do dia', style: ExText.label(c.textSecondary)),
+            Text('$percentage%', style: ExText.mono(size: 13, color: c.textAccent)),
           ],
         ),
-        const SizedBox(height: 8),
-        Stack(
-          children: [
-            Container(
-              height: 8,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: AppTheme.brandPrimary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 1000),
-              curve: Curves.easeInOutQuart,
-              height: 8,
-              width: MediaQuery.of(context).size.width * progress,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppTheme.brandPrimary, AppTheme.successCyan],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.brandPrimary.withValues(alpha: 0.2),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+        const SizedBox(height: ExSpace.s2),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            return Stack(
+              children: [
+                Container(
+                  height: 8,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: c.surface3,
+                    borderRadius: BorderRadius.circular(ExRadius.pill),
                   ),
-                ],
-              ),
-            ),
-          ],
+                ),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeInOutCubic,
+                  height: 8,
+                  width: constraints.maxWidth * progress.clamp(0.0, 1.0),
+                  decoration: BoxDecoration(
+                    gradient: ExColors.gradientBrand,
+                    borderRadius: BorderRadius.circular(ExRadius.pill),
+                    boxShadow: progress > 0 ? ExEffects.glowSm : null,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ],
     );

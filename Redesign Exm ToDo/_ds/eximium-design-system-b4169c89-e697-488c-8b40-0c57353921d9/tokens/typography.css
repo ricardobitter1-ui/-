@@ -1,0 +1,32 @@
+/*
+ * Eximium Design System — typography tokens
+ * Fonts: Red Hat Display (UI) + Red Hat Mono (code/timestamps).
+ * Both shipped from Google Fonts; the @import below carries the @font-face rules.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Red+Hat+Display:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400&family=Red+Hat+Mono:wght@400;500&display=swap');
+
+:root {
+  /* Font families */
+  --ex-font-sans: 'Red Hat Display', 'Inter', system-ui, sans-serif;
+  --ex-font-mono: 'Red Hat Mono', 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Type scale — size */
+  --ex-text-display: 28px;  /* app name, splash             — 700 */
+  --ex-text-h1:      22px;  /* section headers              — 700 */
+  --ex-text-h2:      18px;  /* panel subtitles              — 700 */
+  --ex-text-h3:      15px;  /* card labels                  — 700 */
+  --ex-text-body-lg: 15px;  /* primary body, transcripts    — 400 */
+  --ex-text-body:    13px;  /* metadata, descriptions       — 400 */
+  --ex-text-small:   11px;  /* timestamps, footnotes        — 300 */
+
+  /* Weights */
+  --ex-weight-light:   300;
+  --ex-weight-regular: 400;
+  --ex-weight-medium:  500;
+  --ex-weight-bold:    700;
+
+  /* Tracking */
+  --ex-tracking-tight: -0.02em;  /* display / h1 */
+  --ex-tracking-label:  0.08em;  /* uppercase labels */
+}

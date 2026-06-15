@@ -19,8 +19,11 @@ import '../../business_logic/task_schedule_sort.dart';
 import '../../data/models/task_model.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
-import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
+import '../widgets/eximium/eximium.dart';
 import '../widgets/expandable_create_task_fab.dart';
 import '../widgets/task_appear_motion.dart';
 import '../widgets/task_card.dart';
@@ -46,23 +49,34 @@ class _FilteredTaskListScreenState
 
   DateTime _selectedDate = DateTime.now();
 
-  static final EasyDayProps _timelineDayProps = EasyDayProps(
-    width: 68,
-    height: 112,
-    dayStructure: DayStructure.dayStrDayNum,
-    activeDayDecoration: BoxDecoration(
-      borderRadius: const BorderRadius.all(Radius.circular(16)),
-      gradient: LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [AppTheme.brandPrimary, AppTheme.brandSecondary],
-      ),
-    ),
-    inactiveDayDecoration: BoxDecoration(
-      borderRadius: const BorderRadius.all(Radius.circular(16)),
-      color: Colors.white,
-    ),
-  );
+  EasyDayProps _buildDayProps(ExColors c) => EasyDayProps(
+        width: 68,
+        height: 112,
+        dayStructure: DayStructure.dayStrDayNum,
+        activeDayStyle: DayStyle(
+          decoration: BoxDecoration(
+            borderRadius: const BorderRadius.all(Radius.circular(ExRadius.md)),
+            color: ExColors.brandGreen,
+            boxShadow: [
+              BoxShadow(
+                color: ExColors.brandGreen.withValues(alpha: 0.35),
+                blurRadius: 16,
+              ),
+            ],
+          ),
+          dayNumStyle: ExText.h3(_timelineDayNumOnLight),
+          dayStrStyle: ExText.label(_timelineDayNumOnLight),
+        ),
+        inactiveDayStyle: DayStyle(
+          decoration: BoxDecoration(
+            borderRadius: const BorderRadius.all(Radius.circular(ExRadius.md)),
+            color: c.surface2,
+            border: Border.all(color: c.border),
+          ),
+          dayNumStyle: ExText.h3(c.textSecondary),
+          dayStrStyle: ExText.label(c.textMuted),
+        ),
+      );
 
   String get _title {
     switch (widget.filter) {
@@ -85,18 +99,24 @@ class _FilteredTaskListScreenState
     return memberUidsCacheKey(ids);
   }
 
-  static String _resolveGroupLabel(TaskModel t, Map<String, GroupModel> byId) {
+  static String? _resolveGroupLabel(TaskModel t, Map<String, GroupModel> byId) {
     final id = t.groupId?.trim();
-    if (id == null || id.isEmpty) return 'Pessoal';
+    if (id == null || id.isEmpty) return null;
     return byId[id]?.name ?? 'Grupo';
   }
 
-  static Color _resolveGroupAccent(TaskModel t, Map<String, GroupModel> byId) {
+  static Color? _resolveGroupAccent(TaskModel t, Map<String, GroupModel> byId) {
     final id = t.groupId?.trim();
-    if (id == null || id.isEmpty) return Colors.grey.shade500;
+    if (id == null || id.isEmpty) return null;
     final g = byId[id];
-    if (g == null) return Colors.grey.shade500;
+    if (g == null) return null;
     return parseAppHexColor(g.color);
+  }
+
+  static String? _resolveGroupIconKey(TaskModel t, Map<String, GroupModel> byId) {
+    final id = t.groupId?.trim();
+    if (id == null || id.isEmpty) return null;
+    return byId[id]?.icon;
   }
 
   List<TaskModel> _applyFilter(List<TaskModel> all) {
@@ -147,7 +167,7 @@ class _FilteredTaskListScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Esta série não tem ocorrência neste dia. Abra Hoje e selecione a data.',
+            'Essa tarefa não se repete neste dia. Toque no dia certo no calendário para concluí-la.',
           ),
         ),
       );
@@ -158,10 +178,7 @@ class _FilteredTaskListScreenState
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) => TaskFormModal(initialTask: task),
     );
   }
@@ -174,29 +191,7 @@ class _FilteredTaskListScreenState
     );
   }
 
-  Future<void> _confirmAndDeleteTask(TaskModel task) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Apagar tarefa?'),
-        content: Text(
-          'A tarefa "${task.title}" será removida.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Apagar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-
+  Future<void> _deleteTask(TaskModel task) async {
     final fs = ref.read(firebaseServiceProvider);
     final ns = ref.read(notificationServiceProvider);
 
@@ -279,12 +274,14 @@ class _FilteredTaskListScreenState
                                   _resolveGroupLabel(task, groupById),
                               groupAccentColor:
                                   _resolveGroupAccent(task, groupById),
+                              groupIconKey:
+                                  _resolveGroupIconKey(task, groupById),
                               onToggle: () => _toggleTaskForList(
                                 task,
                                 occurrenceCalendarDay: row.day,
                               ),
                               onEdit: () => _openTaskForm(task: task),
-                              onDelete: () => _confirmAndDeleteTask(task),
+                              onDelete: () => _deleteTask(task),
                             ),
                           );
                         },
@@ -336,6 +333,8 @@ class _FilteredTaskListScreenState
                             groupLabel: _resolveGroupLabel(task, groupById),
                             groupAccentColor:
                                 _resolveGroupAccent(task, groupById),
+                            groupIconKey:
+                                _resolveGroupIconKey(task, groupById),
                             onToggle: () => _toggleTaskForList(
                               task,
                               occurrenceCalendarDay: isTodayFilter
@@ -343,7 +342,7 @@ class _FilteredTaskListScreenState
                                   : null,
                             ),
                             onEdit: () => _openTaskForm(task: task),
-                            onDelete: () => _confirmAndDeleteTask(task),
+                            onDelete: () => _deleteTask(task),
                           ),
                         );
                       },
@@ -355,13 +354,9 @@ class _FilteredTaskListScreenState
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-                      child: Text(
-                        'Concluídas (${completed.length})',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.grey.shade600,
-                        ),
+                      child: ExSectionLabel(
+                        label: 'Concluídas',
+                        count: completed.length,
                       ),
                     ),
                   ),
@@ -389,6 +384,8 @@ class _FilteredTaskListScreenState
                               groupLabel: _resolveGroupLabel(task, groupById),
                               groupAccentColor:
                                   _resolveGroupAccent(task, groupById),
+                              groupIconKey:
+                                  _resolveGroupIconKey(task, groupById),
                               onToggle: () => _toggleTaskForList(
                                 task,
                                 occurrenceCalendarDay: isTodayFilter
@@ -396,7 +393,7 @@ class _FilteredTaskListScreenState
                                     : null,
                               ),
                               onEdit: () => _openTaskForm(task: task),
-                              onDelete: () => _confirmAndDeleteTask(task),
+                              onDelete: () => _deleteTask(task),
                             ),
                           );
                         },
@@ -418,15 +415,14 @@ class _FilteredTaskListScreenState
   }
 
   Widget _buildCalendar(List<TaskModel> allTasks) {
-    final activeDayColor = AppTheme.brandPrimary;
-    final brightness = ThemeData.estimateBrightnessForColor(activeDayColor);
-    final activeDayTextColor = brightness == Brightness.light
-        ? _timelineDayNumOnLight
-        : Colors.white;
+    final c = context.ex;
+    final dayProps = _buildDayProps(c);
+    const activeDayColor = ExColors.brandGreen;
+    const activeDayTextColor = _timelineDayNumOnLight;
 
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: ExSpace.s2),
         child: EasyDateTimeLine(
           initialDate: _selectedDate,
           activeColor: activeDayColor,
@@ -437,8 +433,10 @@ class _FilteredTaskListScreenState
           headerProps: EasyHeaderProps(
             monthPickerType: MonthPickerType.switcher,
             selectedDateFormat: SelectedDateFormat.monthOnly,
+            monthStyle: ExText.h2(c.textPrimary),
+            selectedDateStyle: ExText.h2(c.textPrimary),
           ),
-          dayProps: _timelineDayProps,
+          dayProps: dayProps,
           itemBuilder: (context, date, isSelected, onTap) {
             final hasActivity =
                 allTasks.any((t) => taskVisibleOnDay(t, date));
@@ -447,7 +445,7 @@ class _FilteredTaskListScreenState
               alignment: Alignment.topCenter,
               children: [
                 EasyDayWidget(
-                  easyDayProps: _timelineDayProps,
+                  easyDayProps: dayProps,
                   date: date,
                   locale: 'pt_BR',
                   isSelected: isSelected,
@@ -456,14 +454,14 @@ class _FilteredTaskListScreenState
                   activeTextColor: activeDayTextColor,
                   activeDayColor: activeDayColor,
                 ),
-                if (hasActivity)
+                if (hasActivity && !isSelected)
                   Positioned(
                     top: 6,
                     child: Container(
                       width: 6,
                       height: 6,
                       decoration: const BoxDecoration(
-                        color: AppTheme.brandPrimary,
+                        color: ExColors.lavender,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -477,33 +475,30 @@ class _FilteredTaskListScreenState
   }
 
   Widget _buildEmptyState() {
+    final c = context.ex;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(48),
+        padding: const EdgeInsets.all(ExSpace.s12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(ExSpace.s6),
               decoration: BoxDecoration(
-                color: AppTheme.brandPrimary.withValues(alpha: 0.05),
+                color: ExColors.brandGreen.withValues(alpha: 0.10),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.check_circle_outline_rounded,
                 size: 48,
-                color: AppTheme.brandPrimary,
+                color: ExColors.brandGreen,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: ExSpace.s4),
             Text(
               _emptyMessage,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2B2D42),
-              ),
+              style: ExText.h3(c.textSecondary),
             ),
           ],
         ),

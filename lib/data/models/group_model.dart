@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../business_logic/group_type_config.dart';
 import '../../constants/group_color_presets.dart';
+import 'group_type.dart';
 
 class GroupModel {
   final String id;
@@ -12,6 +14,7 @@ class GroupModel {
   /// Administradores (subconjunto de [members]). Se vazio no Firestore, usa-se [ownerId].
   final List<String> admins;
   final bool isPersonal;
+  final GroupType type;
   final DateTime createdAt;
 
   const GroupModel({
@@ -23,8 +26,11 @@ class GroupModel {
     required this.members,
     this.admins = const [],
     this.isPersonal = false,
+    this.type = GroupType.tasks,
     required this.createdAt,
   });
+
+  GroupTypeConfig get typeConfig => GroupTypeConfig.of(type);
 
   /// Lista efetiva de admins (fallback legacy: só o dono).
   List<String> get effectiveAdmins =>
@@ -52,6 +58,7 @@ class GroupModel {
       members: memberList,
       admins: adminList,
       isPersonal: personal,
+      type: groupTypeFromFirestore(data['type'] as String?),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -65,6 +72,7 @@ class GroupModel {
       'members': members,
       'admins': effectiveAdmins,
       'isPersonal': isPersonal,
+      'type': groupTypeToFirestore(type),
       'createdAt': Timestamp.fromDate(createdAt),
     };
   }
@@ -78,6 +86,7 @@ class GroupModel {
     List<String>? members,
     List<String>? admins,
     bool? isPersonal,
+    GroupType? type,
     DateTime? createdAt,
   }) {
     return GroupModel(
@@ -89,6 +98,7 @@ class GroupModel {
       members: members ?? this.members,
       admins: admins ?? this.admins,
       isPersonal: isPersonal ?? this.isPersonal,
+      type: type ?? this.type,
       createdAt: createdAt ?? this.createdAt,
     );
   }

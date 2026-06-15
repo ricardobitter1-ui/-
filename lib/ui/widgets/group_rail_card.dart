@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../business_logic/group_day_progress.dart';
 import '../../data/models/group_model.dart';
-import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
 import '../theme/group_icon.dart';
 
 class GroupRailCard extends StatelessWidget {
@@ -20,33 +22,25 @@ class GroupRailCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final userTint = parseAppHexColor(group.color);
-    final surface = railCardSurfaceForWhiteText(userTint);
-    final gradientTop = Color.lerp(surface, Colors.white, 0.14) ?? surface;
+    final c = context.ex;
+    final Color groupColor = parseAppHexColor(group.color);
 
     return Material(
-      color: Colors.transparent,
+      color: c.surface1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ExRadius.lg),
+      ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(ExRadius.lg),
         onTap: onTap,
-        child: Ink(
+        child: Container(
           width: 200,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [gradientTop, surface],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.07),
-                blurRadius: 18,
-                offset: const Offset(0, 6),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(ExRadius.lg),
+            border: Border.all(color: c.border),
+            boxShadow: c.shadowCard,
           ),
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(ExSpace.s4),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -57,50 +51,41 @@ class GroupRailCard extends StatelessWidget {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(12),
+                      color: groupColor.withValues(alpha: 0.14),
                     ),
                     child: Icon(
                       groupIconFromKey(group.icon),
-                      color: Colors.white.withValues(alpha: 0.95),
+                      color: groupColor,
                       size: 22,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: ExSpace.s2 + 2),
                   Expanded(
                     child: Text(
                       group.name,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                        height: 1.2,
-                      ),
+                      style: ExText.h3(c.textPrimary),
                     ),
                   ),
                 ],
               ),
-              const Spacer(),
+              const SizedBox(height: ExSpace.s4),
               Text(
                 stats.total == 0
                     ? 'Nenhuma tarefa'
                     : '${stats.completed}/${stats.total} concluídas',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.72),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: ExText.body(c.textSecondary),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: ExSpace.s2),
               ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(ExRadius.pill),
                 child: LinearProgressIndicator(
                   value: stats.total == 0 ? 0 : stats.ratio,
                   minHeight: 6,
-                  backgroundColor: Colors.white.withValues(alpha: 0.22),
-                  color: AppTheme.successCyan,
+                  backgroundColor: c.surface3,
+                  color: groupColor,
                 ),
               ),
             ],

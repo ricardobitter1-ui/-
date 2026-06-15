@@ -1,0 +1,36 @@
+/*
+ * Eximium Design System — effects tokens (shadows, glows, transitions, gradients)
+ * Shadows flip by theme; glows are invariant (always the green halo).
+ */
+
+:root {
+  /* ── Glows — same in both modes ── */
+  --ex-glow-sm: 0 0 12px rgba(var(--ex-brand-green-rgb), 0.20);
+  --ex-glow-md: 0 0 20px rgba(var(--ex-brand-green-rgb), 0.30);
+  --ex-glow-lg: 0 0 40px rgba(var(--ex-brand-green-rgb), 0.45);
+
+  /* ── Focus ring ── */
+  --ex-focus-ring: 0 0 0 3px rgba(var(--ex-brand-green-rgb), 0.12);
+
+  /* ── Transitions (hover/default/modal durations) ── */
+  --ex-transition-fast:   150ms ease; /* @kind other */
+  --ex-transition-normal: 250ms ease; /* @kind other */
+  --ex-transition-slow:   400ms ease; /* @kind other */
+
+  /* ── Brand gradients ── */
+  --ex-gradient-brand: linear-gradient(135deg, #014751, #6DE2C0); /* @kind color */
+  --ex-gradient-app-dark:
+    radial-gradient(1200px 700px at 75% -10%, rgba(109, 226, 192, 0.06), transparent 60%),
+    radial-gradient(900px 600px at 10% 110%, rgba(124, 130, 214, 0.05), transparent 55%); /* @kind color */
+}
+
+:root,
+.dark {
+  --ex-shadow-card:  0 2px 12px rgba(0, 0, 0, 0.40);
+  --ex-shadow-float: 0 8px 32px rgba(0, 0, 0, 0.60);
+}
+
+.light {
+  --ex-shadow-card:  0 1px 4px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.06);
+  --ex-shadow-float: 0 8px 32px rgba(0, 0, 0, 0.15);
+}

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/models/task_recurrence.dart';
-import '../theme/app_theme.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_effects.dart';
 
 /// Editor de regra de repetição; devolve [TaskRecurrenceRule] ou null se limpar.
 class TaskRecurrenceScreen extends StatefulWidget {
@@ -98,8 +99,6 @@ class _TaskRecurrenceScreenState extends State<TaskRecurrenceScreen> {
     final t = await showTimePicker(
       context: context,
       initialTime: _repeatTime ?? const TimeOfDay(hour: 9, minute: 0),
-      builder: (context, child) =>
-          Theme(data: AppTheme.lightTheme, child: child!),
     );
     if (t != null) setState(() => _repeatTime = t);
   }
@@ -110,8 +109,6 @@ class _TaskRecurrenceScreenState extends State<TaskRecurrenceScreen> {
       initialDate: _endDate ?? widget.startDate,
       firstDate: widget.startDate,
       lastDate: DateTime(2035),
-      builder: (context, child) =>
-          Theme(data: AppTheme.lightTheme, child: child!),
     );
     if (d != null) setState(() => _endDate = d);
   }
@@ -134,6 +131,7 @@ class _TaskRecurrenceScreenState extends State<TaskRecurrenceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.ex;
     final startStr = DateFormat.yMMMd('pt_BR').format(widget.startDate);
 
     return Scaffold(
@@ -142,6 +140,7 @@ class _TaskRecurrenceScreenState extends State<TaskRecurrenceScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop<TaskRecurrenceRule?>(null),
+            style: TextButton.styleFrom(foregroundColor: c.errorText),
             child: const Text('Limpar'),
           ),
           TextButton(
@@ -150,7 +149,8 @@ class _TaskRecurrenceScreenState extends State<TaskRecurrenceScreen> {
           ),
         ],
       ),
-      body: ListView(
+      body: ExAppBackground(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text('Cada', style: Theme.of(context).textTheme.titleMedium),
@@ -210,21 +210,26 @@ class _TaskRecurrenceScreenState extends State<TaskRecurrenceScreen> {
                   },
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    width: 36,
-                    height: 36,
+                    width: 40,
+                    height: 40,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: sel
-                          ? AppTheme.brandPrimary.withValues(alpha: 0.2)
-                          : Theme.of(context).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
+                          ? ExColors.brandGreen.withValues(alpha: 0.16)
+                          : c.surface2,
+                      shape: BoxShape.circle,
                       border: Border.all(
-                        color: sel
-                            ? AppTheme.brandPrimary
-                            : Colors.transparent,
+                        color: sel ? ExColors.brandGreen : c.border,
+                      ),
+                      boxShadow: sel ? ExEffects.glowSm : null,
+                    ),
+                    child: Text(
+                      _weekdayLabels[i],
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: sel ? c.textAccent : c.textSecondary,
                       ),
                     ),
-                    child: Text(_weekdayLabels[i]),
                   ),
                 );
               }),
@@ -303,6 +308,7 @@ class _TaskRecurrenceScreenState extends State<TaskRecurrenceScreen> {
               ),
             ),
         ],
+        ),
       ),
     );
   }

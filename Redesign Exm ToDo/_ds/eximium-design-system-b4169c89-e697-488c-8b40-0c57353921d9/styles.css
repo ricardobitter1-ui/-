@@ -1,0 +1,11 @@
+/*
+ * Eximium Design System — styles.css
+ * Global CSS entry point. Consumers link THIS one file.
+ * Keep this file as a list of @import lines only.
+ */
+
+@import "./tokens/typography.css";  /* fonts + @font-face + type scale */
+@import "./tokens/colors.css";      /* brand, status, surfaces, text, borders */
+@import "./tokens/spacing.css";     /* spacing scale + radius */
+@import "./tokens/effects.css";     /* shadows, glows, transitions */
+@import "./tokens/base.css";        /* resets, scrollbar, keyframes, utilities */

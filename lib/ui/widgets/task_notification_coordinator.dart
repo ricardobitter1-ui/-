@@ -134,10 +134,7 @@ class _TaskNotificationCoordinatorState
     showModalBottomSheet<void>(
       context: ctx,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) => TaskFormModal(
         initialTask: task,
         showReminderQuickActions: true,

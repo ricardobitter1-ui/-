@@ -42,6 +42,8 @@ class VoiceTaskPipeline {
     DateTime? referenceDate,
     String? contextGroupName,
     String? forcedGroupName,
+    GroupModel? forcedGroup,
+    GroupModel? contextGroup,
     bool hasForcedGroup = false,
     Map<String, List<String>> tagsByGroupName = const {},
   }) async {
@@ -69,6 +71,8 @@ class VoiceTaskPipeline {
       referenceDate: referenceDate,
       contextGroupName: contextGroupName,
       forcedGroupName: forcedGroupName,
+      forcedGroup: forcedGroup,
+      contextGroup: contextGroup,
       hasForcedGroup: hasForcedGroup,
       tagsByGroupName: tagsByGroupName,
     );
@@ -85,6 +89,8 @@ class VoiceTaskPipeline {
     DateTime? referenceDate,
     String? contextGroupName,
     String? forcedGroupName,
+    GroupModel? forcedGroup,
+    GroupModel? contextGroup,
     bool hasForcedGroup = false,
     Map<String, List<String>> tagsByGroupName = const {},
   }) async {
@@ -97,6 +103,8 @@ class VoiceTaskPipeline {
       hasForcedGroup: hasForcedGroup,
       contextGroupName: contextGroupName,
       forcedGroupName: forcedGroupName,
+      forcedGroup: forcedGroup,
+      contextGroup: contextGroup,
     );
 
     await VoicePerfLogger.phase(
@@ -131,6 +139,8 @@ class VoiceTaskPipeline {
           groups: groups,
           shoppingListItemTitles: VoiceShoppingListContext
               .shouldUseShoppingItemTitles(
+            forcedGroup: forcedGroup,
+            contextGroup: contextGroup,
             forcedGroupName: forcedGroupName,
             contextGroupName: contextGroupName,
           ),
@@ -146,6 +156,8 @@ class VoiceTaskPipeline {
     final noteCapture = mode == VoiceExtractMode.noteCapture;
     final shoppingListItemTitles = !noteCapture &&
         VoiceShoppingListContext.shouldUseShoppingItemTitles(
+          forcedGroup: forcedGroup,
+          contextGroup: contextGroup,
           forcedGroupName: forcedGroupName,
           contextGroupName: contextGroupName,
         );
@@ -236,7 +248,11 @@ class VoiceTaskPipeline {
       );
       final tags =
           gid == null ? const <TagModel>[] : (tagsByGroupId[gid] ?? const []);
-      final canonical = _canonicalTagName(out[i].tagName, tags);
+      final canonical = _canonicalTagName(
+        out[i].tagName,
+        tags,
+        preserveIfMissing: out[i].tagExplicit,
+      );
       out[i] = out[i].copyWith(tagName: canonical);
     }
 
@@ -290,9 +306,17 @@ class VoiceTaskPipeline {
     return out;
   }
 
-  String? _canonicalTagName(String? raw, List<TagModel> tags) {
-    final id = resolveTagIdByName(raw, tags);
-    if (id == null) return null;
+  String? _canonicalTagName(
+    String? raw,
+    List<TagModel> tags, {
+    bool preserveIfMissing = false,
+  }) {
+    final trimmed = raw?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    final id = resolveTagIdByName(trimmed, tags);
+    if (id == null) {
+      return preserveIfMissing ? trimmed : null;
+    }
     return tags.firstWhere((t) => t.id == id).name;
   }
 

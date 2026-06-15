@@ -1,3 +1,38 @@
+// Blocos partilhados entre prompts de extração por voz.
+
+/// Distingue verbos meta (comando ao assistente) de verbos no conteúdo da tarefa.
+const String kVoiceMetaVsContentBlock = r'''
+Verbos de comando dirigidos a TI (assistente) descrevem o que FAZER com a tarefa/lista/tag
+e NÃO entram no "title" nem na "description":
+- Exemplos de verbos meta: "adiciona", "adicione", "cria", "crie", "coloca", "coloque",
+  "põe", "classifica", "marca", "etiqueta", "guarda na lista", "anota".
+
+Os MESMOS verbos são CONTEÚDO quando estão dentro daquilo que deve ser lembrado/feito.
+O sinal de conteúdo é o enquadramento de lembrete: "me lembre de...", "lembrete para...",
+"não esquecer de...". Nesse caso o verbo faz parte do título.
+
+Exemplos:
+- "adicione arroz à lista"            -> title: "Arroz"            (verbo meta removido)
+- "me lembre de adicionar arroz na receita amanhã"
+      -> title: "Adicionar arroz na receita", date: amanhã        (verbo é conteúdo)
+- "cria uma tag chamada Exm App e adiciona esse ponto"
+      -> tagName: "Exm App", tagExplicit: true                    (pedido meta sobre tag)
+''';
+
+/// Regras de tag/categoria/etiqueta no JSON de extração.
+const String kVoiceTagCategoryBlock = r'''
+"tag" / "categoria" / "etiqueta" / "marcador" são sinónimos.
+- Se eu nomear explicitamente uma tag/categoria para a tarefa
+  ("na categoria X", "põe a etiqueta Y", "cria a tag Z"):
+    tagName = nome dito (limpo, sem o verbo), tagExplicit = true.
+- Se NÃO houver "Etiquetas por grupo" na mensagem OU eu não nomear tag:
+    tagName = null, tagExplicit = false (salvo pedido explícito de tag na fala).
+- Em listas de compras continua a valer a auto-categoria em tags EXISTENTES:
+    tagName = nome de uma etiqueta existente do grupo (ou null), tagExplicit = false.
+- Nunca devolvas tagExplicit=true para uma tag que tu próprio inventaste por inferência;
+  só quando EU pedi a tag por palavras.
+''';
+
 /// Prompt de sistema para extrair tarefas a partir do texto transcrito.
 /// Edite este texto para afinar o comportamento do modelo (PT-BR).
 const String kVoiceTaskExtractionSystemPrompt = r'''
@@ -13,7 +48,8 @@ Formato obrigatório:
       "date": "YYYY-MM-DD" ou null,
       "time": "HH:mm" ou null,
       "groupName": "string" ou null,
-      "tagName": "string" ou null
+      "tagName": "string" ou null,
+      "tagExplicit": false
     }
   ]
 }
@@ -29,10 +65,13 @@ Regras:
 - "description" pode ser vazio.
 - "title" deve ser só a ação ou o lembrete: **não** incluas data, hora nem expressões como "hoje", "amanhã", "às 10", "da manhã" — isso vai em "date" e "time".
 - Se o utilizador mencionar um nome que coincida com um grupo da lista (ex.: "para o Chico" e existe o grupo "Chico"), usa esse nome **exacto** em "groupName". Não uses outro grupo por defeito.
-- Quando a mensagem do utilizador incluir "Etiquetas por grupo", para cada tarefa com "groupName" preenchido: se for item de compras/lista desse grupo, preenche "tagName" com o nome **exacto** de uma etiqueta desse grupo na lista, ou null se nenhuma encaixar. Se "groupName" for null, "tagName" deve ser null.
-- Se **não** houver "Etiquetas por grupo" na mensagem, usa sempre "tagName": null.
+- Quando a mensagem do utilizador incluir "Etiquetas por grupo", para cada tarefa com "groupName" preenchido: se for item de compras/lista desse grupo, preenche "tagName" com o nome **exacto** de uma etiqueta desse grupo na lista, ou null se nenhuma encaixar. Se "groupName" for null, "tagName" deve ser null e tagExplicit=false.
+- Se **não** houver "Etiquetas por grupo" na mensagem, usa "tagName": null e tagExplicit=false salvo pedido explícito de tag na fala.
 - Quando o áudio for claramente uma **lista de compras** (vários produtos, supermercado, mercado): cada "title" é **só o nome do produto** (ex.: "Arroz", "Feijão"). **Não** uses verbos no título ("comprar", "pegar", "adicionar", "colocar", "levantar", "buscar").
-''';
+
+''' + kVoiceMetaVsContentBlock + r'''
+
+''' + kVoiceTagCategoryBlock;
 
 /// Lista de compras: títulos = nome do produto (sem verbos de ação).
 const String kVoiceShoppingListExtractionSystemPrompt = r'''
@@ -48,7 +87,8 @@ Formato obrigatório:
       "date": "YYYY-MM-DD" ou null,
       "time": "HH:mm" ou null,
       "groupName": "string" ou null,
-      "tagName": "string" ou null
+      "tagName": "string" ou null,
+      "tagExplicit": false
     }
   ]
 }
@@ -60,7 +100,8 @@ Regras gerais:
 - "groupName" tem de ser EXACTAMENTE um dos nomes em "Grupos existentes", ou null se não aplicável.
 - Datas e horas: resolve "hoje"/"amanhã" com a data de referência; "date" em YYYY-MM-DD; "time" em HH:mm ou null. Itens de supermercado quase sempre têm date e time null.
 - "description" pode ser vazio.
-- Quando houver "Etiquetas por grupo", preenche "tagName" com o nome exacto de uma etiqueta do grupo ou null.
+- Quando houver "Etiquetas por grupo", preenche "tagName" com o nome exacto de uma etiqueta do grupo ou null; tagExplicit=false sempre.
+- tagExplicit deve ser sempre false neste modo (nunca criar tags novas por inferência).
 
 Regras de "title" (lista de compras — crítico):
 - Cada "title" é **apenas o nome do produto ou item**, como apareceria num papel de supermercado: "Arroz", "Macarrão", "Feijão", "Leite desnatado".
@@ -69,7 +110,8 @@ Regras de "title" (lista de compras — crítico):
 - Se o utilizador disser "arroz, macarrão e feijão", cria **três** tarefas com títulos "Arroz", "Macarrão", "Feijão".
 - Mantém qualificadores do produto se o utilizador disser ("arroz integral", "pão de forma").
 - **Não** incluas data, hora nem nomes de grupo no "title".
-''';
+
+''' + kVoiceMetaVsContentBlock;
 
 /// Nota / melhoria / ponto com detalhe: título Área:problema + descrição polida.
 const String kVoiceNoteCaptureExtractionSystemPrompt = r'''
@@ -84,7 +126,8 @@ Formato obrigatório:
       "date": "YYYY-MM-DD" ou null,
       "time": "HH:mm" ou null,
       "groupName": "string" ou null,
-      "tagName": null
+      "tagName": "string" ou null,
+      "tagExplicit": false
     }
   ]
 }
@@ -95,7 +138,10 @@ Regras gerais:
 - Se existir "Grupo fixo do ecrã", usa esse nome exacto em "groupName".
 - "groupName" exacto da lista "Grupos existentes" ou null.
 - "date" e "time" quase sempre null (notas sem prazo). Só preenche se o utilizador disser data/hora explícita.
-- "tagName" sempre null.
+
+''' + kVoiceMetaVsContentBlock + r'''
+
+''' + kVoiceTagCategoryBlock + r'''
 
 Regras de "title":
 - Formato **Área: problema** (ex.: "Snackbar: falta contexto ao criar tarefa").
@@ -124,7 +170,8 @@ Formato:
       "date": "YYYY-MM-DD" ou null,
       "time": "HH:mm" ou null,
       "groupName": "string" ou null,
-      "tagName": null
+      "tagName": null,
+      "tagExplicit": false
     }
   ]
 }
@@ -135,8 +182,9 @@ Regras:
 - "time" em 24h ou null.
 - "groupName" só se estiver na lista de grupos enviada; senão null. Se o utilizador disser "para o X" / "no X" e "X" for um grupo da lista, preenche "groupName" com esse nome exacto.
 - "title" sem data nem hora (só a ação); "amanhã", "às 10", "da manhã" vão em "date" e "time", não no título.
-- "tagName" sempre null.
-''';
+- "tagName" null e tagExplicit false.
+
+''' + kVoiceMetaVsContentBlock;
 
 /// Fase 2: classificar itens de compra nas etiquetas existentes do grupo.
 const String kVoiceTagAssignmentSystemPrompt = r'''
@@ -155,4 +203,3 @@ Regras:
 - "tagName" tem de ser **exactamente** um dos nomes na lista "Etiquetas disponíveis" ou null se nenhuma encaixar bem.
 - Usa o "Contexto" (transcrição) para perceber categoria (ex.: higiene, frescos, mercearia seca).
 ''';
-

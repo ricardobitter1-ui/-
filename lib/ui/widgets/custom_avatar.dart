@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_typography.dart';
 
 class CustomAvatar extends StatelessWidget {
   final String? photoUrl;
@@ -19,7 +21,7 @@ class CustomAvatar extends StatelessWidget {
       return CircleAvatar(
         radius: radius,
         backgroundImage: NetworkImage(photoUrl!),
-        backgroundColor: AppTheme.brandPrimary.withValues(alpha: 0.1),
+        backgroundColor: ExColors.brandGreen.withValues(alpha: 0.1),
       );
     }
 
@@ -33,14 +35,10 @@ class CustomAvatar extends StatelessWidget {
       height: radius * 2,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [AppTheme.brandPrimary, AppTheme.brandSecondary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: ExColors.gradientBrand,
         boxShadow: [
           BoxShadow(
-            color: AppTheme.brandPrimary.withValues(alpha: 0.3),
+            color: ExColors.brandGreen.withValues(alpha: 0.3),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -49,10 +47,9 @@ class CustomAvatar extends StatelessWidget {
       child: Center(
         child: Text(
           initial,
-          style: TextStyle(
-            color: Colors.white,
+          style: ExText.h2(ExColors.onBrandGreen).copyWith(
             fontSize: radius,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),

@@ -29,7 +29,7 @@ class _TaskAppearMotionState extends State<TaskAppearMotion> {
   Widget build(BuildContext context) {
     final reduce = _reduceMotion(context);
     final duration =
-        reduce ? Duration.zero : const Duration(milliseconds: 260);
+        reduce ? Duration.zero : const Duration(milliseconds: 250);
     return AnimatedOpacity(
       duration: duration,
       curve: Curves.easeOut,
