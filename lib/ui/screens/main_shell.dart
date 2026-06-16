@@ -45,7 +45,15 @@ class _MainShellState extends ConsumerState<MainShell> {
 
     return Scaffold(
       extendBody: true,
-      body: IndexedStack(index: _index, children: screens),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const ExAppBar(),
+          Expanded(
+            child: IndexedStack(index: _index, children: screens),
+          ),
+        ],
+      ),
       bottomNavigationBar: ExBottomNav(
         currentIndex: _index,
         onTap: (i) => setState(() => _index = i),

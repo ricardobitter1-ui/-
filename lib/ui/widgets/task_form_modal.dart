@@ -1,7 +1,7 @@
 import 'dart:io' show Platform;
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../business_logic/complete_task_action.dart';
@@ -198,6 +198,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
           _selectedTime = TimeOfDay(hour: d.hour, minute: d.minute);
         }
       }
+
       _recurrence = task.recurrence;
       _locationTrigger = task.locationTrigger ?? 'arrival';
       if (task.reminderType == 'location') {
@@ -206,6 +207,10 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         _locationRadiusMeters = effectiveGeofenceRadiusMeters(task);
         _locationLabel = task.locationLabel;
       }
+    }
+
+    if (task?.description.isNotEmpty == true) {
+      _showDescriptionSection = true;
     }
 
     _titleFocus.addListener(_onTitleFocusChanged);
@@ -454,6 +459,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
 
     setState(() => _isLoading = true);
 
+    var popped = false;
     try {
       final continuous = _isContinuousListGroup(ref);
       if (continuous) {
@@ -601,17 +607,22 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       }
 
       final persisted = task.copyWith(id: savedId);
-      if (!continuous && reminderType == 'datetime') {
-        try {
-          await ns.syncTaskDatetimeReminders(persisted);
-        } catch (e) {
-          print('Erro no agendamento: $e');
-        }
-      } else {
-        await ns.cancelAllTaskReminderSlots(savedId);
+      // Fechar o sheet imediatamente — não aguardar sync de notificações.
+      if (mounted) {
+        Navigator.of(context).pop();
+        popped = true;
       }
 
-      if (mounted) Navigator.of(context).pop();
+      // Sincronizar notificações em background (fire-and-forget).
+      if (!continuous && reminderType == 'datetime') {
+        ns.syncTaskDatetimeReminders(persisted).catchError((e) {
+          debugPrint('Erro no agendamento: $e');
+        });
+      } else {
+        ns.cancelAllTaskReminderSlots(savedId).catchError((e) {
+          debugPrint('Erro ao cancelar notificações: $e');
+        });
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -622,7 +633,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && !popped) setState(() => _isLoading = false);
     }
   }
 

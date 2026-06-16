@@ -457,11 +457,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return Scaffold(
       body: ExAppBackground(
         child: SafeArea(
+          top: false,
           bottom: false,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
               ExSpace.s5,
-              ExSpace.s4,
+              ExSpace.s1,
               ExSpace.s5,
               ExSpace.s8,
             ),

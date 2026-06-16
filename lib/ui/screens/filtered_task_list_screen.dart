@@ -21,6 +21,7 @@ import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../theme/color_utils.dart';
 import '../theme/eximium_colors.dart';
+import '../theme/eximium_effects.dart';
 import '../theme/eximium_spacing.dart';
 import '../theme/eximium_typography.dart';
 import '../widgets/eximium/eximium.dart';
@@ -237,8 +238,17 @@ class _FilteredTaskListScreenState
     final showCalendar = widget.filter == TaskFilterType.today;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_title)),
-      body: tasksAsync.when(
+      body: ExAppBackground(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const ExAppBar(showBackWhenCanPop: true),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 4, 22, 8),
+              child: Text(_title, style: ExText.h1(context.ex.textPrimary)),
+            ),
+            Expanded(
+              child: tasksAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Erro: $e')),
         data: (allTasks) {
@@ -406,6 +416,10 @@ class _FilteredTaskListScreenState
             ],
           );
         },
+              ),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: ExpandableCreateTaskFab(
         onWrite: () => _openTaskForm(),

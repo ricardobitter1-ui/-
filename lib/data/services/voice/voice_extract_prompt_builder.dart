@@ -50,7 +50,7 @@ abstract final class VoiceExtractPromptBuilder {
         : '';
 
     return '''
-Data de referência (hoje no dispositivo): ${req.referenceDate}
+Hoje: ${req.referenceDate}
 $noteLine$shoppingLine$tagHintLine$contextLine$forcedLine
 Grupos existentes (usa exactamente um destes nomes em groupName ou null): $groupsJson
 $tagsLine

@@ -490,7 +490,21 @@ class GroupDetailScreen extends ConsumerWidget {
           ),
         ),
       if (!g.isPersonal)
-        GroupActivitySection(tasks: tasks, profiles: profileMap),
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            initiallyExpanded: false,
+            title: Text(
+              'Atividade recente',
+              style: ExText.label(context.ex.textSecondary),
+            ),
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            children: [
+              GroupActivitySection(tasks: tasks, profiles: profileMap),
+            ],
+          ),
+        ),
       ExpansionTile(
         title: Text('Membros (${g.members.length})'),
         children: [
@@ -568,132 +582,139 @@ class GroupDetailScreen extends ConsumerWidget {
     final groupColor = parseAppHexColor(g.color);
 
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 8,
-        title: Row(
+      body: ExAppBackground(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: groupColor.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(ExRadius.md),
+            ExAppBar(
+              showBackWhenCanPop: true,
+              title: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: groupColor.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(ExRadius.md),
+                    ),
+                    child: Icon(
+                      groupIconFromKey(g.icon),
+                      size: 20,
+                      color: groupColor,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      g.name,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: ExText.h2(context.ex.textPrimary),
+                    ),
+                  ),
+                ],
               ),
-              child: Icon(
-                groupIconFromKey(g.icon),
-                size: 20,
-                color: groupColor,
+              trailing: PopupMenuButton<String>(
+                icon: Icon(Icons.more_vert_rounded, color: context.ex.textPrimary),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'copyLink':
+                      _copyInviteLink(context, ref, g);
+                      break;
+                    case 'invite':
+                      _showInviteByEmail(context, ref, g);
+                      break;
+                    case 'edit':
+                      _openEditGroupSheet(context, g);
+                      break;
+                    case 'manageTags':
+                      _openManageGroupTags(context, ref, g);
+                      break;
+                    case 'delete':
+                      _confirmDeleteGroup(context, ref, g);
+                      break;
+                  }
+                },
+                itemBuilder: (ctx) => [
+                  if (!g.isPersonal && _isAdmin(ref, g))
+                    const PopupMenuItem(
+                      value: 'copyLink',
+                      child: ListTile(
+                        leading: Icon(Icons.link_rounded),
+                        title: Text('Copiar link de convite'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  if (!g.isPersonal && _isAdmin(ref, g))
+                    const PopupMenuItem(
+                      value: 'invite',
+                      child: ListTile(
+                        leading: Icon(Icons.person_add_rounded),
+                        title: Text('Convidar por e-mail'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  if (_isAdmin(ref, g))
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: ListTile(
+                        leading: Icon(Icons.edit_rounded),
+                        title: Text('Editar grupo'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: 'manageTags',
+                    child: ListTile(
+                      leading: Icon(Icons.label_outline_rounded),
+                      title: Text('Gerenciar etiquetas'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  if (!g.isPersonal && _isAdmin(ref, g))
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline_rounded,
+                            color: Colors.redAccent.shade200),
+                        title: Text(
+                          'Apagar grupo',
+                          style: TextStyle(color: Colors.redAccent.shade200),
+                        ),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                ],
               ),
             ),
-            const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                g.name,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-                style: ExText.h2(context.ex.textPrimary),
-              ),
+              child: ref.watch(groupTagsStreamProvider(g.id)).when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => Center(child: Text('Etiquetas: $e')),
+                    data: (tags) => tasksAsync.when(
+                          loading: () => const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                          error: (e, _) => Center(child: Text('Erro: $e')),
+                          data: (tasks) => PartitionedGroupTaskList(
+                            group: g,
+                            tasks: tasks,
+                            tags: tags,
+                            listPrefix: _groupDetailScrollPrefix(
+                              context,
+                              ref,
+                              g,
+                              profilesAsync,
+                              me,
+                              tasks,
+                            ),
+                          ),
+                        ),
+                  ),
             ),
           ],
         ),
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded),
-            onSelected: (value) {
-              switch (value) {
-                case 'copyLink':
-                  _copyInviteLink(context, ref, g);
-                  break;
-                case 'invite':
-                  _showInviteByEmail(context, ref, g);
-                  break;
-                case 'edit':
-                  _openEditGroupSheet(context, g);
-                  break;
-                case 'manageTags':
-                  _openManageGroupTags(context, ref, g);
-                  break;
-                case 'delete':
-                  _confirmDeleteGroup(context, ref, g);
-                  break;
-              }
-            },
-            itemBuilder: (ctx) => [
-              if (!g.isPersonal && _isAdmin(ref, g))
-                const PopupMenuItem(
-                  value: 'copyLink',
-                  child: ListTile(
-                    leading: Icon(Icons.link_rounded),
-                    title: Text('Copiar link de convite'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              if (!g.isPersonal && _isAdmin(ref, g))
-                const PopupMenuItem(
-                  value: 'invite',
-                  child: ListTile(
-                    leading: Icon(Icons.person_add_rounded),
-                    title: Text('Convidar por e-mail'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              if (_isAdmin(ref, g))
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: ListTile(
-                    leading: Icon(Icons.edit_rounded),
-                    title: Text('Editar grupo'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              const PopupMenuItem(
-                value: 'manageTags',
-                child: ListTile(
-                  leading: Icon(Icons.label_outline_rounded),
-                  title: Text('Gerenciar etiquetas'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              if (!g.isPersonal && _isAdmin(ref, g))
-                PopupMenuItem(
-                  value: 'delete',
-                  child: ListTile(
-                    leading: Icon(Icons.delete_outline_rounded,
-                        color: Colors.redAccent.shade200),
-                    title: Text(
-                      'Apagar grupo',
-                      style: TextStyle(color: Colors.redAccent.shade200),
-                    ),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-      body: ExAppBackground(
-        child: ref.watch(groupTagsStreamProvider(g.id)).when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Etiquetas: $e')),
-              data: (tags) => tasksAsync.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Center(child: Text('Erro: $e')),
-                    data: (tasks) => PartitionedGroupTaskList(
-                      group: g,
-                      tasks: tasks,
-                      tags: tags,
-                      listPrefix: _groupDetailScrollPrefix(
-                        context,
-                        ref,
-                        g,
-                        profilesAsync,
-                        me,
-                        tasks,
-                      ),
-                    ),
-                  ),
-            ),
       ),
       floatingActionButton: ExpandableCreateTaskFab(
         onWrite: () => _openCreateTaskForGroup(context, g),

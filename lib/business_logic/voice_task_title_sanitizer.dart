@@ -16,6 +16,10 @@ abstract final class VoiceTaskTitleSanitizer {
       r'(?:,?\s*)?(?:da|de)\s+(?:manha|tarde|noite)\b',
       caseSensitive: false,
     ),
+    RegExp(
+      r'\b(?:em|daqui(?:\s+a)?)\s+(?:\d+|um|uma|dois|duas|tres|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez)\s+(?:minutos?|horas?)\b',
+      caseSensitive: false,
+    ),
   ];
 
   static final _trailingPunctuation = RegExp(r'[\s,;.\-–—]+$');

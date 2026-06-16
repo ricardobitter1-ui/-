@@ -75,11 +75,12 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     return Scaffold(
       body: ExAppBackground(
         child: SafeArea(
+          top: false,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(22, 12, 22, 14),
+                padding: const EdgeInsets.fromLTRB(22, 8, 22, 14),
                 child: Row(
                   children: [
                     Expanded(

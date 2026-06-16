@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../../data/models/task_recurrence.dart';
 import '../theme/eximium_colors.dart';
 import '../theme/eximium_effects.dart';
+import '../theme/eximium_typography.dart';
+import '../widgets/eximium/eximium.dart';
 
 /// Editor de regra de repetição; devolve [TaskRecurrenceRule] ou null se limpar.
 class TaskRecurrenceScreen extends StatefulWidget {
@@ -135,22 +137,34 @@ class _TaskRecurrenceScreenState extends State<TaskRecurrenceScreen> {
     final startStr = DateFormat.yMMMd('pt_BR').format(widget.startDate);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Repetição'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop<TaskRecurrenceRule?>(null),
-            style: TextButton.styleFrom(foregroundColor: c.errorText),
-            child: const Text('Limpar'),
-          ),
-          TextButton(
-            onPressed: _save,
-            child: const Text('OK'),
-          ),
-        ],
-      ),
       body: ExAppBackground(
-        child: ListView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ExAppBar(
+              showBackWhenCanPop: true,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop<TaskRecurrenceRule?>(null),
+                    style: TextButton.styleFrom(foregroundColor: c.errorText),
+                    child: const Text('Limpar'),
+                  ),
+                  TextButton(
+                    onPressed: _save,
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 4, 22, 8),
+              child: Text('Repetição', style: ExText.h1(c.textPrimary)),
+            ),
+            Expanded(
+              child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text('Cada', style: Theme.of(context).textTheme.titleMedium),
@@ -308,6 +322,9 @@ class _TaskRecurrenceScreenState extends State<TaskRecurrenceScreen> {
               ),
             ),
         ],
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../../business_logic/voice_intent_router.dart';
+import '../../business_logic/voice_reminder_extract_postprocessor.dart';
 import '../../business_logic/voice_shopping_list_context.dart';
 import '../../business_logic/voice_reminder_heuristic_parser.dart';
 import '../../business_logic/voice_tag_resolver.dart';
@@ -96,6 +97,8 @@ class VoiceTaskPipeline {
   }) async {
     final ref = referenceDate ?? DateTime.now();
     final dayKey = localCalendarDayKey(ref);
+    final referenceDateForPrompt =
+        '$dayKey ${ref.hour.toString().padLeft(2, '0')}:${ref.minute.toString().padLeft(2, '0')}';
     final names = groups.map((g) => g.name).toList();
 
     final classification = VoiceIntentRouter.classify(
@@ -133,8 +136,12 @@ class VoiceTaskPipeline {
           hypothesisId: 'B',
           data: {'intent': 'reminder_heuristic_ok'},
         );
-        return _finalizeExtractedTasks(
+        final refined = VoiceReminderExtractPostprocessor.refine(
           tasks: [heuristic.task!],
+          referenceDate: ref,
+        );
+        return _finalizeExtractedTasks(
+          tasks: refined,
           transcript: transcript,
           groups: groups,
           shoppingListItemTitles: VoiceShoppingListContext
@@ -165,7 +172,7 @@ class VoiceTaskPipeline {
     final request = VoiceExtractRequest(
       transcript: transcript,
       groupNames: names,
-      referenceDate: dayKey,
+      referenceDate: referenceDateForPrompt,
       contextGroupName: contextGroupName,
       tagsByGroupName: tagsByGroupName,
       forcedGroupName: forcedGroupName,
@@ -187,8 +194,14 @@ class VoiceTaskPipeline {
         'model': _llm.modelId,
       },
     );
+    final refined = mode == VoiceExtractMode.reminder
+        ? VoiceReminderExtractPostprocessor.refine(
+            tasks: dtos,
+            referenceDate: ref,
+          )
+        : dtos;
     return _finalizeExtractedTasks(
-      tasks: dtos,
+      tasks: refined,
       transcript: transcript,
       groups: groups,
       shoppingListItemTitles: shoppingListItemTitles,

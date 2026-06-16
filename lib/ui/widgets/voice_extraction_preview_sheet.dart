@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../business_logic/voice_extraction_plan.dart';
+import '../../business_logic/voice_extract_schedule_label.dart';
 import '../../data/models/extracted_voice_task_dto.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/group_type.dart';
@@ -633,8 +634,82 @@ class _TaskPreviewCardState extends State<_TaskPreviewCard> {
                 hintText: 'Opcional',
               ),
             ),
+            const SizedBox(height: 10),
+            _SchedulePreviewRow(dto: widget.dto),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SchedulePreviewRow extends StatelessWidget {
+  const _SchedulePreviewRow({required this.dto});
+
+  final ExtractedVoiceTaskDto dto;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    final firstDay = MaterialLocalizations.of(context).firstDayOfWeekIndex;
+    final hasSchedule = extractedVoiceTaskHasSchedule(dto);
+    final scheduleLabel = hasSchedule
+        ? formatExtractedVoiceScheduleLabel(
+            dto,
+            now: DateTime.now(),
+            firstDayOfWeekIndex: firstDay,
+          )
+        : '';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: hasSchedule
+            ? ExColors.brandGreen.withValues(alpha: 0.08)
+            : c.surface2,
+        borderRadius: BorderRadius.circular(ExRadius.md),
+        border: Border.all(
+          color: hasSchedule
+              ? ExColors.brandGreen.withValues(alpha: 0.35)
+              : c.surface3,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            hasSchedule
+                ? Icons.notifications_active_outlined
+                : Icons.notifications_off_outlined,
+            size: 20,
+            color: hasSchedule ? ExColors.brandGreen : c.textMuted,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Agendamento',
+                  style: ExText.body(c.textSecondary).copyWith(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  hasSchedule ? scheduleLabel : 'Sem lembrete agendado',
+                  style: ExText.body(
+                    hasSchedule ? c.textPrimary : c.textSecondary,
+                  ).copyWith(
+                    fontWeight:
+                        hasSchedule ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

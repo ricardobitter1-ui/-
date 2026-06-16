@@ -26,6 +26,59 @@ void main() {
       expect(r.task!.time, '10:00');
     });
 
+    test('parses relative minutes ("em 2 minutos")', () {
+      final r = VoiceReminderHeuristicParser.parse(
+        transcript: 'me lembre de comprar leite em 2 minutos',
+        referenceDate: DateTime(2026, 5, 15, 10, 0),
+      );
+      expect(r.confident, isTrue);
+      expect(r.task, isNotNull);
+      expect(r.task!.date, '2026-05-15');
+      expect(r.task!.time, '10:02');
+    });
+
+    test('parses relative hours ("daqui a 2 horas")', () {
+      final r = VoiceReminderHeuristicParser.parse(
+        transcript: 'me lembre de pagar aluguel daqui a 2 horas',
+        referenceDate: DateTime(2026, 5, 15, 10, 0),
+      );
+      expect(r.confident, isTrue);
+      expect(r.task, isNotNull);
+      expect(r.task!.date, '2026-05-15');
+      expect(r.task!.time, '12:00');
+    });
+
+    test('parses "daqui um minuto"', () {
+      final r = VoiceReminderHeuristicParser.parse(
+        transcript: 'me lembre de desligar a panela daqui um minuto',
+        referenceDate: DateTime(2026, 6, 16, 14, 30),
+      );
+      expect(r.confident, isTrue);
+      expect(r.task, isNotNull);
+      expect(r.task!.title.toLowerCase(), contains('desligar'));
+      expect(r.task!.title.toLowerCase(), isNot(contains('minuto')));
+      expect(r.task!.date, '2026-06-16');
+      expect(r.task!.time, '14:31');
+    });
+
+    test('parses "daqui 3 minutos" without "a"', () {
+      final r = VoiceReminderHeuristicParser.parse(
+        transcript: 'me lembre de desligar a panela daqui 3 minutos',
+        referenceDate: DateTime(2026, 6, 16, 14, 30),
+      );
+      expect(r.confident, isTrue);
+      expect(r.task!.time, '14:33');
+    });
+
+    test('parses "daqui duas horas" with word number', () {
+      final r = VoiceReminderHeuristicParser.parse(
+        transcript: 'me lembre de comer daqui duas horas',
+        referenceDate: DateTime(2026, 6, 16, 10, 0),
+      );
+      expect(r.confident, isTrue);
+      expect(r.task!.time, '12:00');
+    });
+
     test('parses Chico group and strips schedule from title', () {
       final r = VoiceReminderHeuristicParser.parse(
         transcript:

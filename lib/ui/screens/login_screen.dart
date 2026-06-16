@@ -86,21 +86,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return Scaffold(
       body: ExAppBackground(
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(
-                ExSpace.s8,
-                ExSpace.s8,
-                ExSpace.s8,
-                ExSpace.s12,
-              ),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const ExAppBar(),
+            Expanded(
+              child: SafeArea(
+                top: false,
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(
+                      ExSpace.s8,
+                      ExSpace.s4,
+                      ExSpace.s8,
+                      ExSpace.s12,
+                    ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                     // Logo tile com gradiente + glow.
                     Container(
                       width: 62,
@@ -214,6 +220,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
         ),
+      ),
+      ],
+    ),
       ),
     );
   }

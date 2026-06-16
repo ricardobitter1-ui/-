@@ -253,6 +253,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       body: ExAppBackground(
         child: SafeArea(
+          top: false,
           child: tasksAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (err, stack) => Center(child: Text('Erro: $err')),
@@ -382,7 +383,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

@@ -177,11 +177,13 @@ Formato:
 }
 
 Regras:
-- Uma só entrada em "tasks".
-- Resolve "hoje", "amanhã" com a data de referência do utilizador.
+- Uma só entrada em "tasks" — nunca duplique a mesma ação em duas entradas.
+- Resolve "hoje", "amanhã" com a data de referência do utilizador (inclui data e hora actuais).
+- Tempo relativo ("em 2 minutos", "daqui 3 minutos", "daqui a 1 hora", "daqui um minuto", "daqui duas horas"): soma à data/hora de referência e preenche "date" (YYYY-MM-DD) e "time" (HH:mm). Não coloques isso em "description".
 - "time" em 24h ou null.
 - "groupName" só se estiver na lista de grupos enviada; senão null. Se o utilizador disser "para o X" / "no X" e "X" for um grupo da lista, preenche "groupName" com esse nome exacto.
-- "title" sem data nem hora (só a ação); "amanhã", "às 10", "da manhã" vão em "date" e "time", não no título.
+- "title" sem data nem hora (só a ação); "amanhã", "às 10", "da manhã", "daqui um minuto" vão em "date" e "time", não no título nem na descrição.
+- "description" deve ficar vazia para lembretes curtos; só preenche se o utilizador der contexto extra além da acção e do prazo.
 - "tagName" null e tagExplicit false.
 
 ''' + kVoiceMetaVsContentBlock;

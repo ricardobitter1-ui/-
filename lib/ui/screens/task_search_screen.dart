@@ -116,11 +116,17 @@ class _TaskSearchScreenState extends ConsumerState<TaskSearchScreen> {
 
     return Scaffold(
       body: ExAppBackground(
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildSearchField(context),
-              Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const ExAppBar(showBackWhenCanPop: true),
+            Expanded(
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  children: [
+                    _buildSearchField(context),
+                    Expanded(
                 child: tasksAsync.when(
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
@@ -204,6 +210,9 @@ class _TaskSearchScreenState extends ConsumerState<TaskSearchScreen> {
             ],
           ),
         ),
+      ),
+      ],
+    ),
       ),
     );
   }

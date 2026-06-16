@@ -7,6 +7,9 @@ import 'package:latlong2/latlong.dart';
 import '../../constants/geofence_constants.dart';
 import '../../data/services/location_service.dart';
 import '../theme/eximium_colors.dart';
+import '../theme/eximium_effects.dart';
+import '../theme/eximium_typography.dart';
+import '../widgets/eximium/eximium.dart';
 
 /// Resultado do fluxo de escolha no mapa (OSM + pin).
 class LocationPickerResult {
@@ -120,19 +123,32 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Onde lembrar'),
-        actions: [
-          TextButton(
-            onPressed: _confirm,
-            child: const Text('CONCLUIR'),
-          ),
-        ],
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
+      body: ExAppBackground(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ExAppBar(
+              showBackWhenCanPop: true,
+              trailing: TextButton(
+                onPressed: _confirm,
+                child: Text(
+                  'CONCLUIR',
+                  style: ExText.label(context.ex.textAccent),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 4, 22, 8),
+              child: Text(
+                'Onde lembrar',
+                style: ExText.h1(context.ex.textPrimary),
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
             child: Stack(
               children: [
                 FlutterMap(
@@ -302,6 +318,10 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
             ),
           ),
         ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

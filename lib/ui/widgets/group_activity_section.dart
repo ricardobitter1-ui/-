@@ -31,13 +31,6 @@ class GroupActivitySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 4, top: 4),
-          child: Text(
-            'Atividade recente',
-            style: ExText.label(c.textSecondary),
-          ),
-        ),
         ...events.map(
           (e) => ListTile(
             dense: true,
