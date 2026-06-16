@@ -11,7 +11,6 @@ import '../../business_logic/voice_extraction_plan.dart';
 import '../../business_logic/voice_recording_quality.dart';
 import '../../business_logic/voice_task_group_resolver.dart';
 import '../../data/local/voice_capture_prefs.dart';
-import '../../debug/voice_perf_logger.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/tag_model.dart';
 import '../../data/models/task_model.dart';
@@ -305,11 +304,6 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
 
     final file = File(filePath);
     final pipeline = VoiceTaskPipeline();
-    // #region agent log
-    VoicePerfLogger.beginRun();
-    final totalSw = Stopwatch()..start();
-    final phasesMs = <String, int>{};
-    // #endregion
     try {
       String? ctxName = widget.contextGroup?.name;
       if (ctxName == null || ctxName.isEmpty) {
@@ -332,9 +326,6 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
       final forcedGid = widget.forcedGroupId?.trim();
       final hasForcedGroup =
           forcedGid != null && forcedGid.isNotEmpty;
-      // #region agent log
-      var sw = Stopwatch()..start();
-      // #endregion
       if (hasForcedGroup) {
         final tags = await tagsCache.fetchTags(forcedGid);
         tagsByGroupId[forcedGid] = tags;
@@ -359,17 +350,6 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
           }),
         );
       }
-      // #region agent log
-      sw.stop();
-      phasesMs['firestore_prefetch_tags'] = sw.elapsedMilliseconds;
-      await VoicePerfLogger.phase(
-        'firestore_prefetch_tags',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'C',
-        data: {'groupCount': widget.groups.length},
-      );
-      sw = Stopwatch()..start();
-      // #endregion
       if (mounted) {
         setState(() => _processingStage = 'Transcrevendo áudio…');
       }
@@ -395,16 +375,6 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
         hasForcedGroup: hasForcedGroup,
         tagsByGroupName: tagsByGroupName,
       );
-      // #region agent log
-      sw.stop();
-      phasesMs['transcribe_and_extract'] = sw.elapsedMilliseconds;
-      await VoicePerfLogger.phase(
-        'transcribe_and_extract_total',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'A,B',
-        data: {'taskCount': extraction.tasks.length},
-      );
-      // #endregion
       if (mounted) {
         setState(() => _processingStage = 'Organizando tarefas…');
       }
@@ -433,45 +403,11 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
       }
 
       final tasksByGroupId = <String, List<TaskModel>>{};
-      // #region agent log
-      sw = Stopwatch()..start();
-      var firestoreFetchMs = 0;
-      // #endregion
       await Future.wait(
         distinctGids.map((gid) async {
-          // #region agent log
-          final gidSw = Stopwatch()..start();
-          // #endregion
           tasksByGroupId[gid] = await fs.fetchTasksByGroupOnce(gid);
-          // #region agent log
-          gidSw.stop();
-          firestoreFetchMs += gidSw.elapsedMilliseconds;
-          await VoicePerfLogger.phase(
-            'firestore_fetch_tasks',
-            elapsedMs: gidSw.elapsedMilliseconds,
-            hypothesisId: 'C',
-            data: {
-              'groupId': gid,
-              'tasksCount': tasksByGroupId[gid]?.length ?? 0,
-            },
-          );
-          // #endregion
         }),
       );
-      // #region agent log
-      sw.stop();
-      phasesMs['firestore_fetch_all'] = sw.elapsedMilliseconds;
-      await VoicePerfLogger.phase(
-        'firestore_fetch_all',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'C',
-        data: {
-          'distinctGroupCount': distinctGids.length,
-          'sumPerGroupMs': firestoreFetchMs,
-        },
-      );
-      sw = Stopwatch()..start();
-      // #endregion
 
       var enriched = await pipeline.enrichExtractedVoiceTasksWithTagAssignments(
         tasks: extraction.tasks,
@@ -480,17 +416,6 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
         tagsByGroupId: tagsByGroupId,
         transcript: extraction.transcript,
       );
-      // #region agent log
-      sw.stop();
-      phasesMs['enrich_tags'] = sw.elapsedMilliseconds;
-      await VoicePerfLogger.phase(
-        'enrich_tags_total',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'D',
-        data: {'taskCount': enriched.length},
-      );
-      sw = Stopwatch()..start();
-      // #endregion
 
       var plan = buildVoiceExtractionPlan(
         tasks: enriched,
@@ -564,22 +489,6 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
         tagsByGroupId: tagsByGroupId,
         deferReminderSync: true,
       );
-      // #region agent log
-      sw.stop();
-      phasesMs['persist_tasks'] = sw.elapsedMilliseconds;
-      await VoicePerfLogger.phase(
-        'persist_tasks',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'E',
-        data: {
-          'created': stats.created,
-          'reopened': stats.reopened,
-        },
-      );
-      totalSw.stop();
-      phasesMs['total'] = totalSw.elapsedMilliseconds;
-      await VoicePerfLogger.summary(phasesMs);
-      // #endregion
       pipeline.dispose();
       try {
         await file.delete();

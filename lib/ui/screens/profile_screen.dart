@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -149,12 +152,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  Future<void> _resyncDatetimeRemindersInBackground() async {
+    try {
+      final ns = ref.read(notificationServiceProvider);
+      final tasks = ref
+          .read(tasksStreamProvider)
+          .maybeWhen(data: (tasks) => tasks, orElse: () => const []);
+      for (final task in tasks.where((t) => t.reminderType == 'datetime')) {
+        await ns.syncTaskDatetimeReminders(task);
+      }
+    } catch (e, st) {
+      debugPrint('Resync de lembretes em segundo plano falhou: $e\n$st');
+    }
+  }
+
   Future<void> _savePendingReminderRepeatSeconds(int seconds) async {
     if (_isSavingPendingReminderPrefs ||
         seconds == _pendingReminderRepeatSeconds) {
       return;
     }
 
+    final previousSeconds = _pendingReminderRepeatSeconds;
     setState(() {
       _pendingReminderRepeatSeconds = seconds;
       _isSavingPendingReminderPrefs = true;
@@ -163,33 +181,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     try {
       await savePendingReminderRepeatSeconds(seconds);
 
-      final ns = ref.read(notificationServiceProvider);
-      final tasks = ref
-          .read(tasksStreamProvider)
-          .maybeWhen(data: (tasks) => tasks, orElse: () => const []);
-      for (final task in tasks.where((t) => t.reminderType == 'datetime')) {
-        await ns.syncTaskDatetimeReminders(task);
-      }
-
       if (mounted) {
+        setState(() => _isSavingPendingReminderPrefs = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Configuração de lembretes atualizada.'),
           ),
         );
       }
+
+      unawaited(_resyncDatetimeRemindersInBackground());
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _pendingReminderRepeatSeconds = previousSeconds;
+          _isSavingPendingReminderPrefs = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erro ao atualizar lembretes: $e'),
+            content: Text('Erro ao salvar configuração: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSavingPendingReminderPrefs = false);
       }
     }
   }

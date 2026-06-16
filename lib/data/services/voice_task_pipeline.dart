@@ -9,7 +9,6 @@ import '../../business_logic/voice_task_duplicate_finder.dart';
 import '../../business_logic/voice_task_due_parser.dart';
 import '../../business_logic/voice_task_group_resolver.dart';
 import '../../business_logic/voice_task_title_sanitizer.dart';
-import '../../debug/voice_perf_logger.dart';
 import '../../utils/calendar_day_key.dart';
 import '../models/extracted_voice_task_dto.dart';
 import '../models/group_model.dart';
@@ -48,19 +47,7 @@ class VoiceTaskPipeline {
     bool hasForcedGroup = false,
     Map<String, List<String>> tagsByGroupName = const {},
   }) async {
-    final audioBytes = await audioFile.length();
-    var sw = Stopwatch()..start();
     final transcript = await _groq.transcribeFile(audioFile: audioFile);
-    sw.stop();
-    await VoicePerfLogger.phase(
-      'groq_transcribe',
-      elapsedMs: sw.elapsedMilliseconds,
-      hypothesisId: 'A',
-      data: {
-        'audioBytes': audioBytes,
-        'transcriptChars': transcript.length,
-      },
-    );
 
     if (transcript.isEmpty) {
       throw StateError('Transcrição vazia');
@@ -110,18 +97,6 @@ class VoiceTaskPipeline {
       contextGroup: contextGroup,
     );
 
-    await VoicePerfLogger.phase(
-      'voice_intent',
-      elapsedMs: 0,
-      hypothesisId: 'B',
-      data: {
-        'intent': classification.intentLabel,
-        'mode': classification.mode.name,
-        'provider': _llm.providerId,
-        'model': _llm.modelId,
-      },
-    );
-
     if (classification.mode == VoiceExtractMode.reminder) {
       final heuristic = VoiceReminderHeuristicParser.parse(
         transcript: transcript,
@@ -130,12 +105,6 @@ class VoiceTaskPipeline {
         groups: groups,
       );
       if (heuristic.confident && heuristic.task != null) {
-        await VoicePerfLogger.phase(
-          'reminder_heuristic',
-          elapsedMs: 0,
-          hypothesisId: 'B',
-          data: {'intent': 'reminder_heuristic_ok'},
-        );
         final refined = VoiceReminderExtractPostprocessor.refine(
           tasks: [heuristic.task!],
           referenceDate: ref,
@@ -180,20 +149,7 @@ class VoiceTaskPipeline {
       mode: mode,
     );
 
-    final sw = Stopwatch()..start();
     final dtos = await _llm.extractTasks(request);
-    sw.stop();
-    await VoicePerfLogger.phase(
-      'llm_extract_tasks',
-      elapsedMs: sw.elapsedMilliseconds,
-      hypothesisId: 'B',
-      data: {
-        'taskCount': dtos.length,
-        'intent': classification.intentLabel,
-        'provider': _llm.providerId,
-        'model': _llm.modelId,
-      },
-    );
     final refined = mode == VoiceExtractMode.reminder
         ? VoiceReminderExtractPostprocessor.refine(
             tasks: dtos,
@@ -291,21 +247,10 @@ class VoiceTaskPipeline {
 
       final indices = e.value;
       final titles = indices.map((i) => out[i].title).toList();
-      final sw = Stopwatch()..start();
       final assigned = await _openRouterTagFallback.assignShoppingTags(
         itemTitles: titles,
         tags: tags,
         transcriptContext: transcript,
-      );
-      sw.stop();
-      await VoicePerfLogger.phase(
-        'llm_assign_tags_fallback',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'D',
-        data: {
-          'groupId': gid,
-          'itemCount': titles.length,
-        },
       );
       for (var j = 0; j < indices.length; j++) {
         final idx = indices[j];

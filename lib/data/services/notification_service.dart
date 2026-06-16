@@ -426,7 +426,6 @@ class NotificationService {
     final bool useAndroidRepeatingChain =
         useNativeAndroidRepeating &&
         repeatInterval != null &&
-        untilExclusive == null &&
         Platform.isAndroid &&
         nextTime != null &&
         slot < maxSlots;
@@ -454,13 +453,25 @@ class NotificationService {
     // Todas as repetições da mesma ocorrência usam o mesmo ID para que cada
     // nova notificação substitua a anterior na gaveta (evita empilhamento).
     final fixedId = baseId + slot;
-    while (nextTime != null && slot < maxSlots) {
+    final maxDiscreteRepeats = repeatInterval == null
+        ? 1
+        : maxPendingReminderDiscreteRepeats(
+            nextFire: nextTime!,
+            untilExclusive: untilExclusive,
+            repeatInterval: repeatInterval,
+            slotsRemaining: maxSlots - slot,
+          );
+    var discreteRepeatsScheduled = 0;
+    while (nextTime != null &&
+        slot < maxSlots &&
+        discreteRepeatsScheduled < maxDiscreteRepeats) {
       if (untilExclusive != null && !nextTime.isBefore(untilExclusive)) break;
       try {
         await scheduleTaskReminder(fixedId, title, body, nextTime, taskId);
       } catch (e) {
         print('DEBUG NOTIF: falha ao agendar slot $slot: $e');
       }
+      discreteRepeatsScheduled++;
       if (repeatInterval == null) break;
       nextTime = nextTime.add(repeatInterval);
     }
@@ -537,6 +548,7 @@ class NotificationService {
           now: now,
           repeatInterval: repeatInterval,
           untilExclusive: nextOccurrence,
+          useNativeAndroidRepeating: true,
         );
       }
       return;
