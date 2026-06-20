@@ -1,13 +1,14 @@
 import 'dart:io';
 
 import '../../business_logic/voice_intent_router.dart';
+import '../../business_logic/voice_reminder_extract_postprocessor.dart';
+import '../../business_logic/voice_shopping_list_context.dart';
 import '../../business_logic/voice_reminder_heuristic_parser.dart';
 import '../../business_logic/voice_tag_resolver.dart';
 import '../../business_logic/voice_task_duplicate_finder.dart';
 import '../../business_logic/voice_task_due_parser.dart';
 import '../../business_logic/voice_task_group_resolver.dart';
 import '../../business_logic/voice_task_title_sanitizer.dart';
-import '../../debug/voice_perf_logger.dart';
 import '../../utils/calendar_day_key.dart';
 import '../models/extracted_voice_task_dto.dart';
 import '../models/group_model.dart';
@@ -41,22 +42,12 @@ class VoiceTaskPipeline {
     DateTime? referenceDate,
     String? contextGroupName,
     String? forcedGroupName,
+    GroupModel? forcedGroup,
+    GroupModel? contextGroup,
     bool hasForcedGroup = false,
     Map<String, List<String>> tagsByGroupName = const {},
   }) async {
-    final audioBytes = await audioFile.length();
-    var sw = Stopwatch()..start();
     final transcript = await _groq.transcribeFile(audioFile: audioFile);
-    sw.stop();
-    await VoicePerfLogger.phase(
-      'groq_transcribe',
-      elapsedMs: sw.elapsedMilliseconds,
-      hypothesisId: 'A',
-      data: {
-        'audioBytes': audioBytes,
-        'transcriptChars': transcript.length,
-      },
-    );
 
     if (transcript.isEmpty) {
       throw StateError('Transcrição vazia');
@@ -68,6 +59,8 @@ class VoiceTaskPipeline {
       referenceDate: referenceDate,
       contextGroupName: contextGroupName,
       forcedGroupName: forcedGroupName,
+      forcedGroup: forcedGroup,
+      contextGroup: contextGroup,
       hasForcedGroup: hasForcedGroup,
       tagsByGroupName: tagsByGroupName,
     );
@@ -84,29 +77,24 @@ class VoiceTaskPipeline {
     DateTime? referenceDate,
     String? contextGroupName,
     String? forcedGroupName,
+    GroupModel? forcedGroup,
+    GroupModel? contextGroup,
     bool hasForcedGroup = false,
     Map<String, List<String>> tagsByGroupName = const {},
   }) async {
     final ref = referenceDate ?? DateTime.now();
     final dayKey = localCalendarDayKey(ref);
+    final referenceDateForPrompt =
+        '$dayKey ${ref.hour.toString().padLeft(2, '0')}:${ref.minute.toString().padLeft(2, '0')}';
     final names = groups.map((g) => g.name).toList();
 
     final classification = VoiceIntentRouter.classify(
       transcript: transcript,
       hasForcedGroup: hasForcedGroup,
       contextGroupName: contextGroupName,
-    );
-
-    await VoicePerfLogger.phase(
-      'voice_intent',
-      elapsedMs: 0,
-      hypothesisId: 'B',
-      data: {
-        'intent': classification.intentLabel,
-        'mode': classification.mode.name,
-        'provider': _llm.providerId,
-        'model': _llm.modelId,
-      },
+      forcedGroupName: forcedGroupName,
+      forcedGroup: forcedGroup,
+      contextGroup: contextGroup,
     );
 
     if (classification.mode == VoiceExtractMode.reminder) {
@@ -117,52 +105,63 @@ class VoiceTaskPipeline {
         groups: groups,
       );
       if (heuristic.confident && heuristic.task != null) {
-        await VoicePerfLogger.phase(
-          'reminder_heuristic',
-          elapsedMs: 0,
-          hypothesisId: 'B',
-          data: {'intent': 'reminder_heuristic_ok'},
+        final refined = VoiceReminderExtractPostprocessor.refine(
+          tasks: [heuristic.task!],
+          referenceDate: ref,
         );
         return _finalizeExtractedTasks(
-          tasks: [heuristic.task!],
+          tasks: refined,
           transcript: transcript,
           groups: groups,
+          shoppingListItemTitles: VoiceShoppingListContext
+              .shouldUseShoppingItemTitles(
+            forcedGroup: forcedGroup,
+            contextGroup: contextGroup,
+            forcedGroupName: forcedGroupName,
+            contextGroupName: contextGroupName,
+          ),
+          noteCapture: false,
         );
       }
     }
 
     final mode = classification.mode == VoiceExtractMode.reminder
         ? VoiceExtractMode.reminder
-        : VoiceExtractMode.shoppingOrGeneral;
+        : classification.mode;
+
+    final noteCapture = mode == VoiceExtractMode.noteCapture;
+    final shoppingListItemTitles = !noteCapture &&
+        VoiceShoppingListContext.shouldUseShoppingItemTitles(
+          forcedGroup: forcedGroup,
+          contextGroup: contextGroup,
+          forcedGroupName: forcedGroupName,
+          contextGroupName: contextGroupName,
+        );
 
     final request = VoiceExtractRequest(
       transcript: transcript,
       groupNames: names,
-      referenceDate: dayKey,
+      referenceDate: referenceDateForPrompt,
       contextGroupName: contextGroupName,
       tagsByGroupName: tagsByGroupName,
       forcedGroupName: forcedGroupName,
+      shoppingListItemTitles: shoppingListItemTitles,
       mode: mode,
     );
 
-    final sw = Stopwatch()..start();
     final dtos = await _llm.extractTasks(request);
-    sw.stop();
-    await VoicePerfLogger.phase(
-      'llm_extract_tasks',
-      elapsedMs: sw.elapsedMilliseconds,
-      hypothesisId: 'B',
-      data: {
-        'taskCount': dtos.length,
-        'intent': classification.intentLabel,
-        'provider': _llm.providerId,
-        'model': _llm.modelId,
-      },
-    );
+    final refined = mode == VoiceExtractMode.reminder
+        ? VoiceReminderExtractPostprocessor.refine(
+            tasks: dtos,
+            referenceDate: ref,
+          )
+        : dtos;
     return _finalizeExtractedTasks(
-      tasks: dtos,
+      tasks: refined,
       transcript: transcript,
       groups: groups,
+      shoppingListItemTitles: shoppingListItemTitles,
+      noteCapture: noteCapture,
     );
   }
 
@@ -170,14 +169,19 @@ class VoiceTaskPipeline {
     required List<ExtractedVoiceTaskDto> tasks,
     required String transcript,
     required List<GroupModel> groups,
+    required bool shoppingListItemTitles,
+    required bool noteCapture,
   }) {
     return tasks
         .map((dto) {
-          final title = VoiceTaskTitleSanitizer.sanitize(
-            dto.title,
-            stripDateHints: dto.date != null,
-            stripTimeHints: dto.time != null,
-          );
+          final title = shoppingListItemTitles
+              ? VoiceTaskTitleSanitizer.sanitizeShoppingItemTitle(dto.title)
+              : VoiceTaskTitleSanitizer.sanitize(
+                  dto.title,
+                  stripDateHints: dto.date != null,
+                  stripTimeHints: dto.time != null,
+                );
+          final description = noteCapture ? dto.description.trim() : dto.description;
           var groupName = dto.groupName?.trim();
           if (groupName == null || groupName.isEmpty) {
             groupName = inferGroupNameFromTranscript(
@@ -185,7 +189,11 @@ class VoiceTaskPipeline {
               groups: groups,
             );
           }
-          return dto.copyWith(title: title, groupName: groupName);
+          return dto.copyWith(
+            title: title,
+            description: description,
+            groupName: groupName,
+          );
         })
         .toList();
   }
@@ -209,7 +217,11 @@ class VoiceTaskPipeline {
       );
       final tags =
           gid == null ? const <TagModel>[] : (tagsByGroupId[gid] ?? const []);
-      final canonical = _canonicalTagName(out[i].tagName, tags);
+      final canonical = _canonicalTagName(
+        out[i].tagName,
+        tags,
+        preserveIfMissing: out[i].tagExplicit,
+      );
       out[i] = out[i].copyWith(tagName: canonical);
     }
 
@@ -235,21 +247,10 @@ class VoiceTaskPipeline {
 
       final indices = e.value;
       final titles = indices.map((i) => out[i].title).toList();
-      final sw = Stopwatch()..start();
       final assigned = await _openRouterTagFallback.assignShoppingTags(
         itemTitles: titles,
         tags: tags,
         transcriptContext: transcript,
-      );
-      sw.stop();
-      await VoicePerfLogger.phase(
-        'llm_assign_tags_fallback',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'D',
-        data: {
-          'groupId': gid,
-          'itemCount': titles.length,
-        },
       );
       for (var j = 0; j < indices.length; j++) {
         final idx = indices[j];
@@ -263,9 +264,17 @@ class VoiceTaskPipeline {
     return out;
   }
 
-  String? _canonicalTagName(String? raw, List<TagModel> tags) {
-    final id = resolveTagIdByName(raw, tags);
-    if (id == null) return null;
+  String? _canonicalTagName(
+    String? raw,
+    List<TagModel> tags, {
+    bool preserveIfMissing = false,
+  }) {
+    final trimmed = raw?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    final id = resolveTagIdByName(trimmed, tags);
+    if (id == null) {
+      return preserveIfMissing ? trimmed : null;
+    }
     return tags.firstWhere((t) => t.id == id).name;
   }
 

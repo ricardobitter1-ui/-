@@ -16,11 +16,42 @@ abstract final class VoiceTaskTitleSanitizer {
       r'(?:,?\s*)?(?:da|de)\s+(?:manha|tarde|noite)\b',
       caseSensitive: false,
     ),
+    RegExp(
+      r'\b(?:em|daqui(?:\s+a)?)\s+(?:\d+|um|uma|dois|duas|tres|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez)\s+(?:minutos?|horas?)\b',
+      caseSensitive: false,
+    ),
   ];
 
   static final _trailingPunctuation = RegExp(r'[\s,;.\-–—]+$');
   static final _leadingPunctuation = RegExp(r'^[\s,;.\-–—]+');
   static final _multiSpace = RegExp(r'\s+');
+
+  /// Remove verbos de ação típicos de listas de compras ("Comprar feijão" → "Feijão").
+  static final _shoppingActionPrefix = RegExp(
+    r'^(?:comprar|pegar|buscar|adicionar|colocar|coloque|levantar|levar|ir\s+comprar|preciso\s+(?:de\s+|comprar\s+)?)\s+(?:(?:o|a|os|as)\s+)?',
+    caseSensitive: false,
+  );
+
+  static String sanitizeShoppingItemTitle(String title) {
+    var t = sanitize(title, stripDateHints: true, stripTimeHints: true);
+    if (t.isEmpty) return t;
+
+    var norm = removeDiacritics(t);
+    var match = _shoppingActionPrefix.firstMatch(norm);
+    while (match != null) {
+      t = t.replaceRange(match.start, match.end, '').trim();
+      if (t.isEmpty) return title.trim();
+      norm = removeDiacritics(t);
+      match = _shoppingActionPrefix.firstMatch(norm);
+    }
+
+    t = t.replaceAll(_multiSpace, ' ').trim();
+    t = t.replaceAll(_leadingPunctuation, '');
+    t = t.replaceAll(_trailingPunctuation, '');
+    if (t.isEmpty) return _capitalizeFirst(title.trim());
+
+    return _capitalizeFirst(t);
+  }
 
   static String sanitize(
     String title, {

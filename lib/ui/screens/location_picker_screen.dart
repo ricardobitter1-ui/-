@@ -6,7 +6,10 @@ import 'package:latlong2/latlong.dart';
 
 import '../../constants/geofence_constants.dart';
 import '../../data/services/location_service.dart';
-import '../theme/app_theme.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_effects.dart';
+import '../theme/eximium_typography.dart';
+import '../widgets/eximium/eximium.dart';
 
 /// Resultado do fluxo de escolha no mapa (OSM + pin).
 class LocationPickerResult {
@@ -120,19 +123,32 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Onde lembrar'),
-        actions: [
-          TextButton(
-            onPressed: _confirm,
-            child: const Text('CONCLUIR'),
-          ),
-        ],
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
+      body: ExAppBackground(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ExAppBar(
+              showBackWhenCanPop: true,
+              trailing: TextButton(
+                onPressed: _confirm,
+                child: Text(
+                  'CONCLUIR',
+                  style: ExText.label(context.ex.textAccent),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 4, 22, 8),
+              child: Text(
+                'Onde lembrar',
+                style: ExText.h1(context.ex.textPrimary),
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
             child: Stack(
               children: [
                 FlutterMap(
@@ -157,10 +173,10 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
                           radius: _radiusMeters,
                           useRadiusInMeter: true,
                           color:
-                              AppTheme.brandPrimary.withValues(alpha: 0.22),
+                              ExColors.brandGreen.withValues(alpha: 0.22),
                           borderStrokeWidth: 2,
                           borderColor:
-                              AppTheme.brandPrimary.withValues(alpha: 0.7),
+                              ExColors.brandGreen.withValues(alpha: 0.7),
                         ),
                       ],
                     ),
@@ -176,7 +192,7 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
                             return Icon(
                               Icons.location_on,
                               size: isDragging ? 52 : 44,
-                              color: AppTheme.brandPrimary,
+                              color: ExColors.brandGreen,
                             );
                           },
                           onDragEnd: (_, point) {
@@ -200,8 +216,11 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
                   top: 12,
                   right: 12,
                   child: Material(
+                    color: context.ex.surface1,
                     elevation: 4,
-                    borderRadius: BorderRadius.circular(24),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
                     child: InkWell(
                       onTap: _locating ? null : _centerOnGps,
                       borderRadius: BorderRadius.circular(24),
@@ -215,9 +234,9 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : Icon(
+                            : const Icon(
                                 Icons.my_location_rounded,
-                                color: AppTheme.brandPrimary,
+                                color: ExColors.brandGreen,
                               ),
                       ),
                     ),
@@ -299,6 +318,10 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
             ),
           ),
         ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

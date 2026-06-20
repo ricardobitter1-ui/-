@@ -1,7 +1,7 @@
 import 'dart:io' show Platform;
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../business_logic/complete_task_action.dart';
@@ -22,11 +22,17 @@ import '../../data/models/group_model.dart';
 import '../../data/models/task_model.dart';
 import '../../data/models/user_public_profile.dart';
 import '../../app_navigator.dart';
-import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_effects.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
 import '../theme/group_icon.dart';
+import 'eximium/eximium.dart';
 import 'group_tag_name_color_dialog.dart';
+import 'notification_permission_sheet.dart';
 import 'task_schedule_dialog.dart';
+import 'voice_task_recording_sheet.dart';
 
 class TaskFormModal extends ConsumerStatefulWidget {
   final TaskModel? initialTask;
@@ -46,7 +52,11 @@ class TaskFormModal extends ConsumerStatefulWidget {
     this.collaborationGroup,
     this.showReminderQuickActions = false,
     this.openScheduleDialogOnOpen = false,
+    this.onStartVoiceCapture,
   });
+
+  /// Se null, o modal abre o sheet de ditado padrão.
+  final VoidCallback? onStartVoiceCapture;
 
   @override
   ConsumerState<TaskFormModal> createState() => _TaskFormModalState();
@@ -80,10 +90,22 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   bool _suggestionsFetched = false;
   List<TagModel> _suggestionTags = [];
 
-  /// Só no fluxo “nova tarefa” sem [forcedGroupId] (ex.: FAB na home).
+  /// Grupo escolhido no picker (nova tarefa ou edição de tarefa sem grupo).
   GroupModel? _selectedGroupForNewTask;
 
   bool get _isEditing => widget.initialTask != null;
+
+  bool get _editingTaskWithoutGroup =>
+      _isEditing &&
+      (widget.initialTask?.groupId?.trim().isEmpty ?? true);
+
+  /// Picker de grupo na barra de ícones (criação ou tarefa sem grupo ao editar).
+  bool get _canPickGroup {
+    final forced = widget.forcedGroupId?.trim();
+    if (forced != null && forced.isNotEmpty) return false;
+    if (!_isEditing) return true;
+    return _editingTaskWithoutGroup;
+  }
 
   /// Grupo cujo contexto de colaboração (membros / responsáveis) está disponível.
   GroupModel? get _activeCollaborationGroup {
@@ -94,7 +116,8 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         widget.collaborationGroup!.id == forced) {
       return widget.collaborationGroup;
     }
-    if (!_isEditing && (forced == null || forced.isEmpty)) {
+    final forcedEmpty = forced == null || forced.isEmpty;
+    if (forcedEmpty && (!_isEditing || _editingTaskWithoutGroup)) {
       return _selectedGroupForNewTask;
     }
     return null;
@@ -111,8 +134,43 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     if (f != null && f.isNotEmpty) return f;
     final g = widget.initialTask?.groupId?.trim();
     if (g != null && g.isNotEmpty) return g;
-    if (!_isEditing) return _selectedGroupForNewTask?.id;
-    return null;
+    return _selectedGroupForNewTask?.id;
+  }
+
+  GroupModel? _resolveEffectiveGroup(WidgetRef ref) {
+    final gid = _effectiveGroupId?.trim();
+    if (gid == null || gid.isEmpty) return null;
+
+    final forced = widget.forcedGroupId?.trim();
+    if (forced != null &&
+        forced == gid &&
+        widget.collaborationGroup != null &&
+        widget.collaborationGroup!.id == gid) {
+      return widget.collaborationGroup;
+    }
+    if (_selectedGroupForNewTask?.id == gid) {
+      return _selectedGroupForNewTask;
+    }
+    final groups = ref.read(groupsStreamProvider).value ?? const <GroupModel>[];
+    for (final g in groups) {
+      if (g.id == gid) return g;
+    }
+    return widget.collaborationGroup;
+  }
+
+  bool _isContinuousListGroup(WidgetRef ref) {
+    return _resolveEffectiveGroup(ref)?.typeConfig.continuous ?? false;
+  }
+
+  void _clearScheduleState() {
+    _reminderType = 'none';
+    _selectedDate = null;
+    _selectedTime = null;
+    _dueHasTime = false;
+    _recurrence = null;
+    _locationLat = null;
+    _locationLng = null;
+    _locationLabel = null;
   }
 
   bool get _showTagSelector => _effectiveGroupId != null;
@@ -140,6 +198,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
           _selectedTime = TimeOfDay(hour: d.hour, minute: d.minute);
         }
       }
+
       _recurrence = task.recurrence;
       _locationTrigger = task.locationTrigger ?? 'arrival';
       if (task.reminderType == 'location') {
@@ -150,19 +209,36 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       }
     }
 
+    if (task?.description.isNotEmpty == true) {
+      _showDescriptionSection = true;
+    }
+
+    _titleFocus.addListener(_onTitleFocusChanged);
+
     if (!_isEditing) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _titleFocus.requestFocus();
       });
     } else if (widget.openScheduleDialogOnOpen) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _openScheduleDialog();
+        if (mounted && !_isContinuousListGroup(ref)) _openScheduleDialog();
       });
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _isContinuousListGroup(ref)) {
+        setState(_clearScheduleState);
+      }
+    });
+  }
+
+  void _onTitleFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _titleFocus.removeListener(_onTitleFocusChanged);
     _titleFocus.dispose();
     _titleController.dispose();
     _descController.dispose();
@@ -170,6 +246,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   }
 
   Future<void> _openScheduleDialog() async {
+    if (_isContinuousListGroup(ref)) return;
     FocusManager.instance.primaryFocus?.unfocus();
     final result = await showTaskScheduleDialog(
       context,
@@ -209,6 +286,9 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         _selectedAssigneeIds.clear();
       }
       _selectedGroupForNewTask = g;
+      if (g?.typeConfig.continuous ?? false) {
+        _clearScheduleState();
+      }
     });
   }
 
@@ -218,7 +298,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     if (asyncGroups.isLoading) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('A carregar grupos…')),
+          const SnackBar(content: Text('Carregando grupos…')),
         );
       }
       return;
@@ -237,78 +317,92 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Text(
-                  'Grupo da tarefa (opcional)',
-                  style: Theme.of(ctx).textTheme.titleMedium,
-                ),
-              ),
-              ListTile(
-                leading: Icon(Icons.person_outline, color: Colors.grey.shade700),
-                title: const Text('Nenhum'),
-                subtitle: const Text('Tarefa só para si'),
-                trailing: _selectedGroupForNewTask == null
-                    ? const Icon(Icons.check, color: AppTheme.brandPrimary)
-                    : null,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _applyPickedGroup(null);
-                },
-              ),
-              const Divider(height: 1),
-              if (groups.isEmpty)
+        final c = ctx.ex;
+        return Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: c.surface1,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(ExRadius.xl),
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Padding(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   child: Text(
-                    'Ainda não tem grupos. Crie um no separador Grupos.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey.shade700),
-                  ),
-                )
-              else
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(ctx).height * 0.45,
-                  ),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: groups.length,
-                    itemBuilder: (_, i) {
-                      final g = groups[i];
-                      final sel = _selectedGroupForNewTask?.id == g.id;
-                      final tint = parseAppHexColor(g.color);
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: tint.withValues(alpha: 0.2),
-                          child: Icon(groupIconFromKey(g.icon), color: tint),
-                        ),
-                        title: Text(g.name),
-                        subtitle: g.isPersonal
-                            ? const Text('Grupo pessoal')
-                            : null,
-                        trailing: sel
-                            ? const Icon(Icons.check, color: AppTheme.brandPrimary)
-                            : null,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _applyPickedGroup(g);
-                        },
-                      );
-                    },
+                    'Grupo da tarefa (opcional)',
+                    style: ExText.h3(c.textPrimary),
                   ),
                 ),
-            ],
+                ListTile(
+                  leading: Icon(Icons.person_outline, color: c.textSecondary),
+                  title: Text('Nenhum', style: ExText.body(c.textPrimary)),
+                  subtitle: Text(
+                    'Só para mim',
+                    style: ExText.small(c.textMuted),
+                  ),
+                  trailing: _selectedGroupForNewTask == null
+                      ? Icon(Icons.check, color: c.textAccent)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _applyPickedGroup(null);
+                  },
+                ),
+                Divider(height: 1, color: c.border),
+                if (groups.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Você ainda não tem grupos. Crie um na aba Grupos.',
+                      textAlign: TextAlign.center,
+                      style: ExText.body(c.textSecondary),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(ctx).height * 0.45,
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: groups.length,
+                      itemBuilder: (_, i) {
+                        final g = groups[i];
+                        final sel = _selectedGroupForNewTask?.id == g.id;
+                        final tint = parseAppHexColor(g.color);
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: tint.withValues(alpha: 0.2),
+                            child: Icon(groupIconFromKey(g.icon), color: tint),
+                          ),
+                          title: Text(g.name, style: ExText.body(c.textPrimary)),
+                          subtitle: g.isPersonal
+                              ? Text(
+                                  'Grupo pessoal',
+                                  style: ExText.small(c.textMuted),
+                                )
+                              : null,
+                          trailing: sel
+                              ? Icon(Icons.check, color: c.textAccent)
+                              : null,
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _applyPickedGroup(g);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -365,10 +459,18 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
 
     setState(() => _isLoading = true);
 
+    var popped = false;
     try {
+      final continuous = _isContinuousListGroup(ref);
+      if (continuous) {
+        _clearScheduleState();
+      }
+
       DateTime? finalDueDate;
       TaskRecurrenceRule? recurrenceForSave;
-      if (_reminderType == 'datetime' && _selectedDate != null) {
+      if (!continuous &&
+          _reminderType == 'datetime' &&
+          _selectedDate != null) {
         final d = _selectedDate!;
         if (_dueHasTime && _selectedTime != null) {
           finalDueDate = DateTime(
@@ -395,7 +497,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       double? lng;
       double? geofenceRadius;
       String? locationLabel;
-      if (_reminderType == 'location') {
+      if (!continuous && _reminderType == 'location') {
         if (_locationLat == null || _locationLng == null) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -435,8 +537,11 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         locationLabel = _locationLabel;
       }
 
-      final dueHasTimeForSave =
-          _reminderType == 'datetime' && _dueHasTime && _selectedTime != null;
+      final reminderType = continuous ? 'none' : _reminderType;
+      final dueHasTimeForSave = !continuous &&
+          reminderType == 'datetime' &&
+          _dueHasTime &&
+          _selectedTime != null;
 
       final task = TaskModel(
         id: widget.initialTask?.id ?? '',
@@ -449,10 +554,11 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         longitude: lng,
         geofenceRadiusMeters: geofenceRadius,
         locationLabel: locationLabel,
-        reminderType: _reminderType == 'none' ? null : _reminderType,
-        dueDate: finalDueDate,
+        reminderType: reminderType == 'none' ? null : reminderType,
+        dueDate: continuous ? null : finalDueDate,
         dueHasTime: dueHasTimeForSave,
-        locationTrigger: _reminderType == 'location' ? _locationTrigger : null,
+        locationTrigger:
+            reminderType == 'location' ? _locationTrigger : null,
         ownerId: widget.initialTask?.ownerId,
         groupId: _effectiveGroupId,
         createdBy: widget.initialTask?.createdBy,
@@ -460,12 +566,13 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
             ? _selectedAssigneeIds.toList()
             : (widget.initialTask?.assigneeIds ?? const []),
         tagIds: tagIdsForSave,
-        recurrence: _reminderType == 'datetime' ? recurrenceForSave : null,
+        recurrence: reminderType == 'datetime' ? recurrenceForSave : null,
       );
 
       final ns = ref.read(notificationServiceProvider);
 
-      if (_reminderType == 'datetime' &&
+      if (!continuous &&
+          reminderType == 'datetime' &&
           dueHasTimeForSave &&
           finalDueDate != null &&
           finalDueDate.isBefore(DateTime.now()) &&
@@ -482,6 +589,14 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         return;
       }
 
+      if (!continuous &&
+          (reminderType == 'datetime' || reminderType == 'location')) {
+        final ns = ref.read(notificationServiceProvider);
+        if (mounted) {
+          await ensureNotificationPermissionsIfNeeded(context, ns);
+        }
+      }
+
       final fs = ref.read(firebaseServiceProvider);
       late final String savedId;
       if (_isEditing) {
@@ -492,17 +607,22 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       }
 
       final persisted = task.copyWith(id: savedId);
-      if (_reminderType == 'datetime') {
-        try {
-          await ns.syncTaskDatetimeReminders(persisted);
-        } catch (e) {
-          print('Erro no agendamento: $e');
-        }
-      } else {
-        await ns.cancelAllTaskReminderSlots(savedId);
+      // Fechar o sheet imediatamente — não aguardar sync de notificações.
+      if (mounted) {
+        Navigator.of(context).pop();
+        popped = true;
       }
 
-      if (mounted) Navigator.of(context).pop();
+      // Sincronizar notificações em background (fire-and-forget).
+      if (!continuous && reminderType == 'datetime') {
+        ns.syncTaskDatetimeReminders(persisted).catchError((e) {
+          debugPrint('Erro no agendamento: $e');
+        });
+      } else {
+        ns.cancelAllTaskReminderSlots(savedId).catchError((e) {
+          debugPrint('Erro ao cancelar notificações: $e');
+        });
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -513,7 +633,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && !popped) setState(() => _isLoading = false);
     }
   }
 
@@ -683,7 +803,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Text(
-                          'Nenhuma etiqueta noutros grupos.',
+                          'Nenhuma etiqueta em outros grupos.',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: Colors.grey,
                           ),
@@ -784,6 +904,31 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     setState(() => _showAssigneesSection = !_showAssigneesSection);
   }
 
+  void _openVoiceFromForm() {
+    if (widget.onStartVoiceCapture != null) {
+      widget.onStartVoiceCapture!();
+      return;
+    }
+    final groups = ref.read(groupsStreamProvider).value ?? const [];
+    final forced = widget.forcedGroupId?.trim();
+    GroupModel? contextGroup = widget.collaborationGroup;
+    if (contextGroup == null && forced != null && forced.isNotEmpty) {
+      for (final g in groups) {
+        if (g.id == forced) {
+          contextGroup = g;
+          break;
+        }
+      }
+    }
+    Navigator.of(context).pop();
+    showVoiceTaskRecordingSheet(
+      context: context,
+      groups: groups,
+      forcedGroupId: forced,
+      contextGroup: contextGroup,
+    );
+  }
+
   Widget _buildAssigneesPanel(
     BuildContext context,
     AsyncValue<Map<String, UserPublicProfile?>> profilesAsync,
@@ -870,70 +1015,164 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
           )
         : null;
     final me = ref.watch(authStateProvider).value;
+    final continuous = _isContinuousListGroup(ref);
 
+    final c = context.ex;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    return Theme(
-      data: AppTheme.lightTheme,
+    final bool titleFocused = _titleFocus.hasFocus;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: c.surface1,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(ExRadius.xl),
+        ),
+      ),
       child: ConstrainedBox(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * 0.9,
         ),
         child: Padding(
           padding: EdgeInsets.only(
-            top: 20,
-            left: 24,
-            right: 24,
+            top: ExSpace.s3,
+            left: ExSpace.s6,
+            right: ExSpace.s6,
             bottom: bottomInset,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: c.surface3,
+                    borderRadius: BorderRadius.circular(ExRadius.pill),
+                  ),
+                ),
+              ),
+              const SizedBox(height: ExSpace.s5),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    _isEditing ? 'Editar Tarefa' : 'Nova Tarefa',
-                    style: Theme.of(context).textTheme.titleLarge,
+                  Expanded(
+                    child: Text(
+                      continuous
+                          ? (_isEditing ? 'Editar item' : 'Novo item')
+                          : (_isEditing ? 'Editar tarefa' : 'Nova tarefa'),
+                      style: ExText.h2(c.textPrimary),
+                    ),
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
+                  _CircleIconButton(
+                    icon: Icons.close_rounded,
+                    onTap: () => Navigator.pop(context),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _titleController,
-                focusNode: _titleFocus,
-                autofocus: false,
-                decoration: const InputDecoration(
-                  hintText: 'O que você precisa fazer?',
+              const SizedBox(height: ExSpace.s4),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                decoration: BoxDecoration(
+                  color: c.surface2,
+                  borderRadius: BorderRadius.circular(ExRadius.md),
+                  border: titleFocused
+                      ? ExEffects.focusBorder()
+                      : Border.all(color: c.border),
+                  boxShadow: titleFocused ? ExEffects.focusRing : null,
                 ),
-                textCapitalization: TextCapitalization.sentences,
+                child: TextField(
+                  controller: _titleController,
+                  focusNode: _titleFocus,
+                  autofocus: false,
+                  style: ExText.h3(c.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: continuous
+                        ? 'O que falta comprar?'
+                        : 'O que você precisa fazer?',
+                    hintStyle: ExText.h3(c.textMuted),
+                    filled: false,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: ExSpace.s4,
+                      vertical: ExSpace.s4,
+                    ),
+                  ),
+                  textCapitalization: TextCapitalization.sentences,
+                ),
               ),
               if (widget.showReminderQuickActions && _isEditing) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: ExSpace.s3),
                 Row(
                   children: [
                     Expanded(
-                      child: OutlinedButton(
+                      child: ExButton(
+                        label: 'Marcar como concluída',
+                        variant: ExButtonVariant.secondary,
+                        size: ExButtonSize.sm,
+                        expand: true,
                         onPressed: _isLoading ? null : _quickMarkComplete,
-                        child: const Text('Marcar como concluída'),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: ExSpace.s2),
                     Expanded(
-                      child: OutlinedButton(
+                      child: ExButton(
+                        label: 'Reprogramar',
+                        variant: ExButtonVariant.secondary,
+                        size: ExButtonSize.sm,
+                        expand: true,
                         onPressed: _isLoading ? null : _openScheduleDialog,
-                        child: const Text('Reprogramar'),
                       ),
                     ),
                   ],
                 ),
               ],
+              const SizedBox(height: ExSpace.s4),
+              Wrap(
+                spacing: ExSpace.s2,
+                runSpacing: ExSpace.s2,
+                children: [
+                  _ActionChip(
+                    icon: Icons.notes_rounded,
+                    label: 'Descrição',
+                    selected: _showDescriptionSection,
+                    onTap: _toggleDescriptionSection,
+                  ),
+                  if (!continuous)
+                    _ActionChip(
+                      icon: Icons.event_rounded,
+                      label: 'Lembrete',
+                      selected: _reminderType != 'none',
+                      onTap: _openScheduleDialog,
+                    ),
+                  if (_canPickGroup)
+                    _ActionChip(
+                      icon: Icons.group_rounded,
+                      label: 'Grupo',
+                      selected: _selectedGroupForNewTask != null,
+                      onTap: _openGroupPickerSheet,
+                    ),
+                  if (_showTagSelector)
+                    _ActionChip(
+                      icon: Icons.label_rounded,
+                      label: 'Etiquetas',
+                      selected: _showTagsSection,
+                      onTap: _toggleTagsSection,
+                    ),
+                  if (_showAssignees)
+                    _ActionChip(
+                      icon: Icons.people_rounded,
+                      label: 'Responsáveis',
+                      selected: _showAssigneesSection,
+                      onTap: _toggleAssigneesSection,
+                    ),
+                ],
+              ),
               if (_anyOptionalSectionOpen) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: ExSpace.s3),
                 Flexible(
                   child: SingleChildScrollView(
                     child: _buildOptionalSections(
@@ -945,67 +1184,35 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                   ),
                 ),
               ],
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _iconBarItem(
-                    icon: Icons.notes_outlined,
-                    tooltip: 'Descrição',
-                    selected: _showDescriptionSection,
-                    onTap: _toggleDescriptionSection,
-                  ),
-                  _iconBarItem(
-                    icon: Icons.event_outlined,
-                    tooltip: 'Agendamento',
-                    selected: _reminderType != 'none',
-                    onTap: _openScheduleDialog,
-                  ),
-                  if (!_isEditing &&
-                      (widget.forcedGroupId == null ||
-                          widget.forcedGroupId!.trim().isEmpty))
-                    _iconBarItem(
-                      icon: Icons.group_outlined,
-                      tooltip: 'Grupo',
-                      selected: _selectedGroupForNewTask != null,
-                      onTap: _openGroupPickerSheet,
-                    ),
-                  if (_showTagSelector)
-                    _iconBarItem(
-                      icon: Icons.label_outline,
-                      tooltip: 'Etiquetas',
-                      selected: _showTagsSection,
-                      onTap: _toggleTagsSection,
-                    ),
-                  if (_showAssignees)
-                    _iconBarItem(
-                      icon: Icons.people_outline,
-                      tooltip: 'Responsáveis',
-                      selected: _showAssigneesSection,
-                      onTap: _toggleAssigneesSection,
-                    ),
-                ],
-              ),
-              const Divider(height: 1),
+              const SizedBox(height: ExSpace.s4),
+              Divider(height: 1, color: c.border),
               SafeArea(
                 top: false,
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 12, bottom: 8),
-                  child: SizedBox(
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _submit,
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 24,
-                              width: 24,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : Text(_isEditing ? 'Salvar Alterações' : 'Criar Tarefa'),
-                    ),
+                  padding: const EdgeInsets.only(
+                      top: ExSpace.s3, bottom: ExSpace.s2),
+                  child: Row(
+                    children: [
+                      _CircleIconButton(
+                        icon: Icons.mic_rounded,
+                        accent: true,
+                        onTap: _openVoiceFromForm,
+                      ),
+                      const SizedBox(width: ExSpace.s3),
+                      Expanded(
+                        child: ExButton(
+                          label: _isLoading
+                              ? 'Salvando…'
+                              : (_isEditing
+                                  ? 'Salvar alterações'
+                                  : 'Salvar tarefa'),
+                          variant: ExButtonVariant.primary,
+                          size: ExButtonSize.lg,
+                          expand: true,
+                          onPressed: _isLoading ? null : _submit,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1015,18 +1222,91 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       ),
     );
   }
+}
 
-  Widget _iconBarItem({
-    required IconData icon,
-    required String tooltip,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    final c = selected ? AppTheme.brandPrimary : Colors.grey.shade600;
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: onTap,
-      icon: Icon(icon, color: c, size: 26),
+/// Botão circular (fechar / microfone) do sheet de tarefa.
+class _CircleIconButton extends StatelessWidget {
+  const _CircleIconButton({
+    required this.icon,
+    required this.onTap,
+    this.accent = false,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    return Material(
+      color: accent ? Colors.transparent : c.surface2,
+      shape: CircleBorder(
+        side: BorderSide(color: accent ? c.borderAccent : c.border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            icon,
+            size: 22,
+            color: accent ? c.textAccent : c.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Chip de ação (pill) que abre/seleciona uma seção opcional.
+class _ActionChip extends StatelessWidget {
+  const _ActionChip({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    final fg = selected ? c.textAccent : c.textSecondary;
+    return Material(
+      color: selected
+          ? ExColors.brandGreen.withValues(alpha: 0.14)
+          : c.surface2,
+      shape: StadiumBorder(
+        side: BorderSide(color: selected ? c.borderAccent : c.border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: ExSpace.s3,
+            vertical: ExSpace.s2,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: fg),
+              const SizedBox(width: ExSpace.s2),
+              Text(
+                label,
+                style: ExText.body(fg).copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

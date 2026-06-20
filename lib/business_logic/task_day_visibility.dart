@@ -19,6 +19,7 @@ bool _personalInboxUndatedVisibleOnDay(
   required DateTime now,
 }) {
   if (t.dueDate != null || !_noGroup(t)) return false;
+  if (t.reminderType == 'location') return false;
   final today = DateTime(now.year, now.month, now.day);
   return _sameCalendarDay(day, today);
 }

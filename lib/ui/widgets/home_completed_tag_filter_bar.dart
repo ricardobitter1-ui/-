@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../data/models/tag_model.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
+import 'eximium/eximium.dart';
 
 /// Opção de filtro com chave estável entre grupos (`groupId::tagId`).
 class HomeTagFilterOption {
@@ -36,31 +40,86 @@ class HomeCompletedSectionTagFilterBar extends StatelessWidget {
       );
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: ExSpace.s3),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            FilterChip(
-              label: const Text('Todas'),
+            _FilterPill(
+              label: 'Todas',
               selected: selectedCompositeKey == null,
-              onSelected: (_) => onSelect(null),
+              onTap: () => onSelect(null),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: ExSpace.s2),
             for (final o in sorted)
               Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: FilterChip(
-                  avatar: CircleAvatar(
-                    radius: 8,
-                    backgroundColor: Color(o.tag.color),
-                  ),
-                  label: Text(o.tag.name),
+                padding: const EdgeInsets.only(right: ExSpace.s2),
+                child: _FilterPill(
+                  label: o.tag.name,
+                  dotColor: Color(o.tag.color),
                   selected: selectedCompositeKey == o.compositeKey,
-                  onSelected: (sel) => onSelect(sel ? o.compositeKey : null),
+                  onTap: () => onSelect(
+                    selectedCompositeKey == o.compositeKey
+                        ? null
+                        : o.compositeKey,
+                  ),
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterPill extends StatelessWidget {
+  const _FilterPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.dotColor,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Color? dotColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    final Color bg = selected
+        ? ExColors.brandGreen.withValues(alpha: 0.14)
+        : c.surface2;
+    final Color fg = selected ? c.textAccent : c.textSecondary;
+    final Color borderColor =
+        selected ? c.borderAccent : c.border;
+
+    return Material(
+      color: bg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ExRadius.pill),
+        side: BorderSide(color: borderColor),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(ExRadius.pill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (dotColor != null) ...[
+                ExDot(color: dotColor!),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: ExText.body(fg)
+                    .copyWith(fontWeight: FontWeight.w600, fontSize: 12),
+              ),
+            ],
+          ),
         ),
       ),
     );

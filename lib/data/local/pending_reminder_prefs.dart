@@ -65,3 +65,19 @@ Future<void> savePendingReminderRepeatSeconds(int seconds) async {
   await p.setInt(PendingReminderPrefsKeys.repeatSeconds, normalized);
   await p.remove(PendingReminderPrefsKeys.repeatMinutes);
 }
+
+/// Máximo de alarmes discretos para repetição pendente até [untilExclusive].
+int maxPendingReminderDiscreteRepeats({
+  required DateTime nextFire,
+  required DateTime? untilExclusive,
+  required Duration repeatInterval,
+  required int slotsRemaining,
+}) {
+  if (repeatInterval.inMilliseconds <= 0 || slotsRemaining <= 0) return 0;
+  if (untilExclusive == null) return slotsRemaining;
+  if (!nextFire.isBefore(untilExclusive)) return 0;
+  final remainingMs = untilExclusive.difference(nextFire).inMilliseconds;
+  if (remainingMs <= 0) return 0;
+  final count = (remainingMs / repeatInterval.inMilliseconds).ceil();
+  return count.clamp(1, slotsRemaining);
+}

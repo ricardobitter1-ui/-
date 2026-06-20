@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../business_logic/voice_recording_quality.dart';
-import '../theme/app_theme.dart';
+import '../theme/eximium_colors.dart';
 
 /// Barras de amplitude centradas, estilo onda de voz.
 class VoiceAmplitudeWaveform extends StatelessWidget {
@@ -10,7 +10,7 @@ class VoiceAmplitudeWaveform extends StatelessWidget {
     required this.levels,
     this.barCount = 32,
     this.height = 72,
-    this.activeColor = AppTheme.brandPrimary,
+    this.activeColor = ExColors.brandGreen,
     this.idleColor,
   });
 

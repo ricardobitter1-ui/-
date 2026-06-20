@@ -1,0 +1,103 @@
+/*
+ * Eximium Design System — base resets, scrollbar, keyframes, utilities
+ */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html {
+  font-family: var(--ex-font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  background: var(--ex-surface-0);
+  color: var(--ex-text-primary);
+  transition: background var(--ex-transition-normal), color var(--ex-transition-normal);
+}
+
+button, input, textarea, select { font-family: inherit; }
+
+::selection {
+  background: rgba(var(--ex-brand-green-rgb), 0.30);
+  color: #fff;
+}
+
+/* ── Scrollbar ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ex-scrollbar-thumb) var(--ex-scrollbar-track);
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background-color: var(--ex-scrollbar-thumb);
+  border-radius: var(--ex-radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover  { background-color: var(--ex-scrollbar-thumb-hover); }
+*::-webkit-scrollbar-thumb:active { background-color: var(--ex-scrollbar-thumb-active); }
+
+/* ── Keyframes ── */
+@keyframes ex-fade-up {
+  from { transform: translateY(7px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+@keyframes ex-glow-pulse {
+  0%,  100% { box-shadow: 0 0 20px rgba(var(--ex-brand-green-rgb), 0.25); }
+  50%       { box-shadow: 0 0 36px rgba(var(--ex-brand-green-rgb), 0.45); }
+}
+@keyframes ex-ring-in {
+  from { transform: scale(0.86); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+@keyframes ex-bar-pulse {
+  0%, 100% {
+    border-color: rgba(var(--ex-brand-green-rgb), 0.40);
+    box-shadow: 0 0 30px rgba(var(--ex-brand-green-rgb), 0.30);
+  }
+  50% {
+    border-color: rgba(var(--ex-brand-green-rgb), 0.70);
+    box-shadow: 0 0 44px rgba(var(--ex-brand-green-rgb), 0.45);
+  }
+}
+@keyframes ex-spin { to { transform: rotate(360deg); } }
+
+/* ── Utility classes ── */
+.ex-glow-hover {
+  transition:
+    box-shadow var(--ex-transition-normal),
+    border-color var(--ex-transition-normal),
+    background var(--ex-transition-normal),
+    color var(--ex-transition-fast);
+}
+.ex-glow-hover:hover { box-shadow: var(--ex-glow-md); }
+
+.ex-fade-up { animation: ex-fade-up 0.22s ease both; }
+
+.ex-mono { font-family: var(--ex-font-mono); }
+
+.ex-label {
+  font-size: var(--ex-text-small);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--ex-tracking-label);
+}
+
+/* Always-dark element (floating bars, overlays, toasts) — never follows theme */
+.ex-always-dark {
+  --ex-surface-0: #0A0A0A;
+  --ex-surface-1: #141414;
+  --ex-surface-2: #1E1E1E;
+  --ex-surface-3: #2A2A2A;
+  --ex-text-primary:   #FFFFFF;
+  --ex-text-secondary: #999999;
+  --ex-text-muted:     #666666;
+  --ex-text-accent:    #6DE2C0;
+  --ex-border:        #2A2A2A;
+  --ex-border-accent: rgba(109, 226, 192, 0.25);
+}

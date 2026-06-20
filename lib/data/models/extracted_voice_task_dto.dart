@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+const _unset = Object();
+
 /// Uma tarefa devolvida pelo LLM antes de mapear para [TaskModel].
 class ExtractedVoiceTaskDto {
   final String title;
@@ -7,8 +9,10 @@ class ExtractedVoiceTaskDto {
   final String? date;
   final String? time;
   final String? groupName;
-  /// Nome da etiqueta do grupo (fase 2 LLM); deve coincidir com uma tag existente.
+  /// Nome da etiqueta do grupo (fase 2 LLM).
   final String? tagName;
+  /// True quando o utilizador pediu explicitamente esta tag/categoria (pode criar se não existir).
+  final bool tagExplicit;
 
   const ExtractedVoiceTaskDto({
     required this.title,
@@ -17,23 +21,26 @@ class ExtractedVoiceTaskDto {
     this.time,
     this.groupName,
     this.tagName,
+    this.tagExplicit = false,
   });
 
   ExtractedVoiceTaskDto copyWith({
     String? title,
     String? description,
-    String? date,
-    String? time,
-    String? groupName,
-    String? tagName,
+    Object? date = _unset,
+    Object? time = _unset,
+    Object? groupName = _unset,
+    Object? tagName = _unset,
+    bool? tagExplicit,
   }) {
     return ExtractedVoiceTaskDto(
       title: title ?? this.title,
       description: description ?? this.description,
-      date: date ?? this.date,
-      time: time ?? this.time,
-      groupName: groupName ?? this.groupName,
-      tagName: tagName ?? this.tagName,
+      date: date == _unset ? this.date : date as String?,
+      time: time == _unset ? this.time : time as String?,
+      groupName: groupName == _unset ? this.groupName : groupName as String?,
+      tagName: tagName == _unset ? this.tagName : tagName as String?,
+      tagExplicit: tagExplicit ?? this.tagExplicit,
     );
   }
 
@@ -57,10 +64,18 @@ class ExtractedVoiceTaskDto {
           time: _nullableString(m['time'] ?? m['hora']),
           groupName: _nullableString(m['groupName'] ?? m['grupo']),
           tagName: _nullableString(m['tagName'] ?? m['tag']),
+          tagExplicit: _parseBool(m['tagExplicit'] ?? m['tagExplicito']),
         ),
       );
     }
     return out;
+  }
+
+  static bool _parseBool(Object? v) {
+    if (v == null) return false;
+    if (v is bool) return v;
+    final s = v.toString().trim().toLowerCase();
+    return s == 'true' || s == '1' || s == 'sim';
   }
 
   static String? _nullableString(Object? v) {

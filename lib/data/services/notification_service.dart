@@ -426,7 +426,6 @@ class NotificationService {
     final bool useAndroidRepeatingChain =
         useNativeAndroidRepeating &&
         repeatInterval != null &&
-        untilExclusive == null &&
         Platform.isAndroid &&
         nextTime != null &&
         slot < maxSlots;
@@ -451,27 +450,33 @@ class NotificationService {
       }
     }
 
-    while (nextTime != null && slot < maxSlots) {
+    // Todas as repetições da mesma ocorrência usam o mesmo ID para que cada
+    // nova notificação substitua a anterior na gaveta (evita empilhamento).
+    final fixedId = baseId + slot;
+    final maxDiscreteRepeats = repeatInterval == null
+        ? 1
+        : maxPendingReminderDiscreteRepeats(
+            nextFire: nextTime!,
+            untilExclusive: untilExclusive,
+            repeatInterval: repeatInterval,
+            slotsRemaining: maxSlots - slot,
+          );
+    var discreteRepeatsScheduled = 0;
+    while (nextTime != null &&
+        slot < maxSlots &&
+        discreteRepeatsScheduled < maxDiscreteRepeats) {
       if (untilExclusive != null && !nextTime.isBefore(untilExclusive)) break;
       try {
-        // Android sem recorrência: repetição nativa (um ID). Recorrente / iOS / fallback:
-        // vários IDs (ver comentário no ramo nativo acima).
-        await scheduleTaskReminder(
-          baseId + slot,
-          title,
-          body,
-          nextTime,
-          taskId,
-        );
+        await scheduleTaskReminder(fixedId, title, body, nextTime, taskId);
       } catch (e) {
         print('DEBUG NOTIF: falha ao agendar slot $slot: $e');
       }
-      slot++;
+      discreteRepeatsScheduled++;
       if (repeatInterval == null) break;
       nextTime = nextTime.add(repeatInterval);
     }
 
-    return slot;
+    return slot + 1;
   }
 
   /// Agenda lembretes conforme [task] (datetime + opcional recorrência) ou cancela slots.
@@ -543,6 +548,7 @@ class NotificationService {
           now: now,
           repeatInterval: repeatInterval,
           untilExclusive: nextOccurrence,
+          useNativeAndroidRepeating: true,
         );
       }
       return;

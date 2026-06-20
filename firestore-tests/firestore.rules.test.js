@@ -189,3 +189,58 @@ test('convite por e-mail: convidado com token email lê o convite', async () => 
   }).firestore();
   await assertSucceeds(db.doc('groupInvites/g1_alice@test.com').get());
 });
+
+test('admin atualiza type do grupo (metadata only)', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc('groups/g1').set({
+      name: 'G',
+      icon: 'group',
+      color: '#000',
+      ownerId: 'owner1',
+      members: ['owner1'],
+      admins: ['owner1'],
+      isPersonal: false,
+      createdAt: new Date(),
+    });
+  });
+
+  const db = authed('owner1');
+  await assertSucceeds(
+    db.doc('groups/g1').update({
+      type: 'continuous',
+    }),
+  );
+});
+
+test('membro atualiza completedAt em tarefa de grupo', async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const fs = ctx.firestore();
+    await fs.doc('groups/g1').set({
+      name: 'G',
+      icon: 'group',
+      color: '#000',
+      ownerId: 'owner1',
+      members: ['owner1', 'alice'],
+      admins: ['owner1'],
+      isPersonal: false,
+      createdAt: new Date(),
+    });
+    await fs.doc('tasks/t1').set({
+      title: 'Item',
+      description: '',
+      isCompleted: false,
+      ownerId: 'owner1',
+      groupId: 'g1',
+      createdBy: 'owner1',
+      assigneeIds: [],
+    });
+  });
+
+  const db = authed('alice');
+  await assertSucceeds(
+    db.doc('tasks/t1').update({
+      isCompleted: true,
+      completedAt: new Date(),
+    }),
+  );
+});

@@ -16,21 +16,16 @@ service cloud.firestore {
         && request.auth.uid in groupDoc(gid).members;
     }
 
-    // Alinhado com GroupModel.effectiveAdmins: lista vazia ou ausente => só o dono é admin.
+    // Dono sempre admin; demais admins vêm da lista `admins` (se não vazia).
     function isGroupAdmin(gid) {
       return signedIn()
         && exists(/databases/$(database)/documents/groups/$(gid))
         && (
-          (groupDoc(gid).keys().hasAll(['admins'])
+          request.auth.uid == groupDoc(gid).ownerId
+          || (groupDoc(gid).keys().hasAll(['admins'])
             && groupDoc(gid).admins is list
             && groupDoc(gid).admins.size() > 0
             && request.auth.uid in groupDoc(gid).admins)
-          || (groupDoc(gid).keys().hasAll(['admins'])
-            && groupDoc(gid).admins is list
-            && groupDoc(gid).admins.size() == 0
-            && request.auth.uid == groupDoc(gid).ownerId)
-          || (!groupDoc(gid).keys().hasAll(['admins'])
-            && request.auth.uid == groupDoc(gid).ownerId)
         );
     }
 
@@ -156,7 +151,7 @@ service cloud.firestore {
 
     function metadataOnlyGroupUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['name', 'icon', 'color']);
+        .hasOnly(['name', 'icon', 'color', 'type']);
     }
 
     function addedOnlySelfToMembers(gid) {

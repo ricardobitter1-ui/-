@@ -1,0 +1,22 @@
+/*
+ * Eximium Design System — spacing & geometry tokens
+ */
+
+:root {
+  /* ── Spacing scale ── */
+  --ex-space-1:   4px;
+  --ex-space-2:   8px;
+  --ex-space-3:  12px;
+  --ex-space-4:  16px;
+  --ex-space-5:  20px;
+  --ex-space-6:  24px;
+  --ex-space-8:  32px;
+  --ex-space-12: 48px;
+
+  /* ── Border radius ── */
+  --ex-radius-sm:   6px;     /* compact badges, chips */
+  --ex-radius-md:   12px;    /* inputs, tooltips */
+  --ex-radius-lg:   20px;    /* cards, panels */
+  --ex-radius-xl:   32px;    /* modals, large containers */
+  --ex-radius-pill: 9999px;  /* buttons, tags, scrollbar thumb */
+}

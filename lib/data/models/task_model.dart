@@ -39,6 +39,10 @@ class TaskModel {
   /// Dias civis locais (`yyyy-MM-dd`) em que a ocorrência da série foi concluída.
   /// Só usado quando [recurrence] != null e lembrete por data/hora.
   final List<String> completedOccurrenceDateKeys;
+  /// Momento da última conclusão (null ao reabrir). Legado: null.
+  final DateTime? completedAt;
+  /// Criação no Firestore (opcional em tarefas legadas).
+  final DateTime? createdAt;
 
   TaskModel({
     required this.id,
@@ -61,6 +65,8 @@ class TaskModel {
     this.tagIds = const [],
     this.recurrence,
     this.completedOccurrenceDateKeys = const [],
+    this.completedAt,
+    this.createdAt,
   }) : titleSearchKey = (resolvedSearchKey != null && resolvedSearchKey.isNotEmpty)
             ? resolvedSearchKey
             : normalizeTitleSearchKey(title);
@@ -85,6 +91,8 @@ class TaskModel {
     Object? tagIds = _unset,
     Object? recurrence = _unset,
     Object? completedOccurrenceDateKeys = _unset,
+    Object? completedAt = _unset,
+    Object? createdAt = _unset,
   }) {
     final newTitle = title ?? this.title;
     return TaskModel(
@@ -120,6 +128,12 @@ class TaskModel {
           : List<String>.from(
               completedOccurrenceDateKeys as List<String>,
             ),
+      completedAt: identical(completedAt, _unset)
+          ? this.completedAt
+          : completedAt as DateTime?,
+      createdAt: identical(createdAt, _unset)
+          ? this.createdAt
+          : createdAt as DateTime?,
     );
   }
 
@@ -145,6 +159,7 @@ class TaskModel {
       'tagIds': tagIds,
       'recurrence': recurrence?.toMap(),
       'completedOccurrenceDateKeys': completedOccurrenceDateKeys,
+      if (completedAt != null) 'completedAt': Timestamp.fromDate(completedAt!),
     };
   }
 }

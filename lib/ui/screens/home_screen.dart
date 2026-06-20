@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../business_logic/complete_task_action.dart';
+import '../../business_logic/home_counts.dart';
 import '../../business_logic/overdue_occurrences.dart';
 import '../../business_logic/providers/group_provider.dart';
 import '../../business_logic/providers/task_provider.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
-import '../../business_logic/task_day_visibility.dart';
+import '../../business_logic/reschedule_overdue_batch.dart';
 import '../../business_logic/task_list_partition.dart';
 import '../../business_logic/task_occurrence_display.dart';
 import '../../data/models/group_model.dart';
@@ -14,14 +15,20 @@ import '../../data/models/user_public_profile.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
-import '../theme/app_theme.dart';
 import '../theme/color_utils.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_effects.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
+import '../widgets/eximium/ex_bottom_nav.dart';
 import '../widgets/expandable_create_task_fab.dart';
 import '../widgets/task_appear_motion.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_form_modal.dart';
 import '../widgets/voice_task_recording_sheet.dart';
+import 'calendar_agenda_screen.dart';
 import 'filtered_task_list_screen.dart';
+import 'task_search_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -31,97 +38,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkPermissions();
-    });
-  }
-
-  Future<void> _checkPermissions() async {
-    final ns = ref.read(notificationServiceProvider);
-    await ns.initialize();
-    final hasNotifPerm = await ns.hasPermission();
-    final hasAlarmPerm = await ns.hasAlarmPermission();
-    if ((!hasNotifPerm || !hasAlarmPerm) && mounted) {
-      _showPermissionSheet(ns, !hasNotifPerm, !hasAlarmPerm);
-    }
-  }
-
-  void _showPermissionSheet(
-    NotificationService ns,
-    bool needsNotif,
-    bool needsAlarm,
-  ) {
-    showModalBottomSheet(
-      context: context,
-      isDismissible: false,
-      enableDrag: false,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.notifications_active_rounded,
-                size: 64,
-                color: AppTheme.brandPrimary,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                "Não perca suas tarefas!",
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                needsAlarm
-                    ? "Para que os lembretes toquem na hora exata, precisamos que você ative as notificações e a permissão de 'Alarmes e Lembretes' nas configurações."
-                    : "Precisamos que você libere as notificações para que o app consiga despertar e te avisar na hora exata do lembrete.",
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.grey, fontSize: 16),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    await ns.requestPermission();
-                    if (context.mounted) Navigator.pop(context);
-                    _checkPermissions();
-                  },
-                  child: const Text("Configurar Permissões"),
-                ),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  "Agora não",
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
+  bool _todayCompletedExpanded = false;
 
   void _openTaskForm({TaskModel? task}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) => TaskFormModal(initialTask: task),
     );
   }
@@ -132,31 +55,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       groups: groups,
     );
-  }
-
-  Future<void> _confirmAndDeleteTask(TaskModel task) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Apagar tarefa?'),
-        content: Text(
-          'A tarefa "${task.title}" será removida. Pode tocar em Desfazer na mensagem que aparece em seguida.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Apagar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    await _deleteTask(task);
   }
 
   Future<void> _deleteTask(TaskModel task) async {
@@ -190,7 +88,102 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await ns.cancelAllTaskReminderSlots(task.id);
   }
 
-  // ── helpers de contagem ────────────────────────────────────────────────
+  Future<void> _rescheduleAllOverdue(
+    List<OverdueOccurrenceRow> rows,
+    DateTime targetDay,
+  ) async {
+    final fs = ref.read(firebaseServiceProvider);
+    final ns = ref.read(notificationServiceProvider);
+    final reschedulable =
+        rows.where((r) => !isDatetimeRecurringTask(r.task)).toList();
+    if (reschedulable.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Nenhuma tarefa pontual atrasada para reagendar. '
+              'Tarefas recorrentes precisam ser ajustadas uma a uma.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    for (final row in reschedulable) {
+      final updated = taskRescheduledToDay(row.task, targetDay);
+      await fs.updateTask(updated);
+      if (updated.reminderType == 'datetime') {
+        await ns.syncTaskDatetimeReminders(updated);
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${reschedulable.length} tarefa${reschedulable.length == 1 ? '' : 's'} '
+            'reagendada${reschedulable.length == 1 ? '' : 's'}.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showRescheduleOverduePicker(
+    List<OverdueOccurrenceRow> rows,
+  ) async {
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Reagendar todas as atrasadas',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.wb_sunny_outlined),
+              title: const Text('Para amanhã'),
+              onTap: () => Navigator.pop(ctx, 'tomorrow'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_outlined),
+              title: const Text('Escolher data'),
+              onTap: () => Navigator.pop(ctx, 'pick'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+
+    if (choice == 'tomorrow') {
+      await _rescheduleAllOverdue(rows, tomorrow);
+      return;
+    }
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: tomorrow,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365 * 2)),
+      locale: const Locale('pt', 'BR'),
+    );
+    if (picked != null && mounted) {
+      await _rescheduleAllOverdue(rows, picked);
+    }
+  }
 
   static String _homeAssigneeCacheKey(List<TaskModel> visibleActive) {
     final n = visibleActive.length > 5 ? 5 : visibleActive.length;
@@ -201,43 +194,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return memberUidsCacheKey(ids);
   }
 
-  static List<TaskModel> _activeTasksForDay(
-    List<TaskModel> allTasks,
-    DateTime day,
-  ) {
-    final dayTasks =
-        allTasks.where((t) => taskVisibleOnDay(t, day)).toList();
-    return partitionTasksByCompletionForCalendarDay(dayTasks, day).active;
-  }
-
-  static String _resolveGroupLabel(TaskModel t, Map<String, GroupModel> byId) {
+  static String? _resolveGroupLabel(TaskModel t, Map<String, GroupModel> byId) {
     final id = t.groupId?.trim();
-    if (id == null || id.isEmpty) return 'Pessoal';
+    if (id == null || id.isEmpty) return null;
     return byId[id]?.name ?? 'Grupo';
   }
 
-  static Color _resolveGroupAccent(TaskModel t, Map<String, GroupModel> byId) {
+  static Color? _resolveGroupAccent(TaskModel t, Map<String, GroupModel> byId) {
     final id = t.groupId?.trim();
-    if (id == null || id.isEmpty) return Colors.grey.shade500;
+    if (id == null || id.isEmpty) return null;
     final g = byId[id];
-    if (g == null) return Colors.grey.shade500;
+    if (g == null) return null;
     return parseAppHexColor(g.color);
   }
 
-  // ── build ──────────────────────────────────────────────────────────────
+  static String? _resolveGroupIconKey(TaskModel t, Map<String, GroupModel> byId) {
+    final id = t.groupId?.trim();
+    if (id == null || id.isEmpty) return null;
+    return byId[id]?.icon;
+  }
 
   @override
   Widget build(BuildContext context) {
     final tasksAsync = ref.watch(tasksStreamProvider);
     final user = ref.watch(authStateProvider).value;
 
+    final groupsList =
+        ref.watch(groupsStreamProvider).value ?? const <GroupModel>[];
+    final groupById = {for (final g in groupsList) g.id: g};
+
     final homeAssigneeKey = tasksAsync.maybeWhen(
       data: (allTasks) {
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
         final tomorrow = today.add(const Duration(days: 1));
-        final todayActive = _activeTasksForDay(allTasks, today);
-        final tomorrowActive = _activeTasksForDay(allTasks, tomorrow);
+        final todayActive = activeTasksForDay(
+          allTasks,
+          today,
+          now: now,
+          groupById: groupById,
+        );
+        final tomorrowActive = activeTasksForDay(
+          allTasks,
+          tomorrow,
+          now: now,
+          groupById: groupById,
+        );
         return _homeAssigneeCacheKey([
           ...todayActive.take(5),
           ...tomorrowActive.take(5),
@@ -247,40 +249,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
     final assigneeProfileMap =
         ref.watch(groupMemberProfilesProvider(homeAssigneeKey)).value ?? {};
-    final groupsList =
-        ref.watch(groupsStreamProvider).value ?? const <GroupModel>[];
-    final groupById = {for (final g in groupsList) g.id: g};
 
     return Scaffold(
-      body: SafeArea(
-        child: tasksAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (err, stack) => Center(child: Text('Erro: $err')),
+      body: ExAppBackground(
+        child: SafeArea(
+          top: false,
+          child: tasksAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (err, stack) => Center(child: Text('Erro: $err')),
           data: (allTasks) {
             final now = DateTime.now();
             final today = DateTime(now.year, now.month, now.day);
-            final todayTasks =
-                allTasks.where((t) => taskVisibleOnDay(t, today)).toList();
-            final scheduledTasks =
-                allTasks.where(taskMatchesScheduledFilter).toList();
             final overdueRows = collectOverdueOccurrenceRows(allTasks, now);
 
-            final todayActive = _activeTasksForDay(allTasks, today);
+            final todayVisible = tasksVisibleOnHomeDay(
+              allTasks,
+              today,
+              now: now,
+              groupById: groupById,
+            );
+            final todayPartition =
+                partitionTasksByCompletionForCalendarDay(todayVisible, today);
+            final todayActive = todayPartition.active;
+            final todayCompleted = todayPartition.completed;
             final tomorrow = today.add(const Duration(days: 1));
-            final tomorrowActive = _activeTasksForDay(allTasks, tomorrow);
+            final tomorrowActive = activeTasksForDay(
+              allTasks,
+              tomorrow,
+              now: now,
+              groupById: groupById,
+            );
             final hasTomorrow = tomorrowActive.isNotEmpty;
-            final hasUpcoming = todayActive.isNotEmpty || hasTomorrow;
+            final hasToday =
+                todayActive.isNotEmpty || todayCompleted.isNotEmpty;
+            final hasUpcoming = hasToday || hasTomorrow;
+            final hasOverdue = overdueRows.isNotEmpty;
 
             return CustomScrollView(
               slivers: [
                 _buildHeader(user),
-                _buildQuadrantsGrid(
-                  todayCount: todayTasks.length,
-                  scheduledCount: scheduledTasks.length,
-                  allCount: allTasks.length,
-                  overdueCount: overdueRows.length,
+                _buildQuickNavRow(
+                  scheduledCount: pendingScheduledCount(
+                    allTasks,
+                    now: now,
+                    groupById: groupById,
+                  ),
                 ),
-                _buildSectionTitle('Próximas tarefas'),
+                if (hasOverdue) ...[
+                  _buildOverdueSectionHeader(overdueRows),
+                  ..._buildOverdueTaskSlivers(
+                    rows: overdueRows,
+                    assigneeProfileMap: assigneeProfileMap,
+                    groupById: groupById,
+                    user: user,
+                  ),
+                ],
+                _buildSectionTitle('Hoje'),
                 if (todayActive.isNotEmpty)
                   ..._buildHomeTaskSlivers(
                     tasks: todayActive,
@@ -290,10 +314,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     groupById: groupById,
                     user: user,
                     padBottomForFab:
-                        !hasTomorrow && todayActive.length <= 5,
+                        !hasTomorrow &&
+                        todayCompleted.isEmpty &&
+                        todayActive.length <= 5,
+                  ),
+                if (todayCompleted.isNotEmpty)
+                  ..._buildTodayCompletedSlivers(
+                    tasks: todayCompleted,
+                    calendarDay: today,
+                    assigneeProfileMap: assigneeProfileMap,
+                    groupById: groupById,
+                    user: user,
+                    padBottomForFab: !hasTomorrow,
                   ),
                 if (hasTomorrow) ...[
-                  _buildDaySectionDivider('Tarefas de amanhã'),
+                  _buildDaySectionDivider('Amanhã'),
                   ..._buildHomeTaskSlivers(
                     tasks: tomorrowActive,
                     calendarDay: tomorrow,
@@ -302,34 +337,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     groupById: groupById,
                     user: user,
                     padBottomForFab: tomorrowActive.length <= 5,
+                    maxPreview: 5,
                   ),
                 ],
-                if (!hasUpcoming)
+                if (!hasUpcoming && !hasOverdue)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                       child: _buildEmptyUpcomingState(),
-                    ),
-                  ),
-                if (todayActive.length > 5)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        24,
-                        0,
-                        24,
-                        hasTomorrow ? 0 : 80,
-                      ),
-                      child: TextButton(
-                        onPressed: () => _navigateToFilter(TaskFilterType.today),
-                        child: Text(
-                          'Ver todas as ${todayActive.length} tarefas de hoje',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.brandPrimary,
-                          ),
-                        ),
-                      ),
                     ),
                   ),
                 if (hasTomorrow && tomorrowActive.length > 5)
@@ -341,35 +356,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             _navigateToFilter(TaskFilterType.scheduled),
                         child: Text(
                           'Ver todas as ${tomorrowActive.length} tarefas de amanhã',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.brandPrimary,
-                          ),
+                          style: ExText.body(context.ex.textAccent)
+                              .copyWith(fontWeight: FontWeight.w700),
                         ),
                       ),
                     ),
                   ),
               ],
             );
-          },
+            },
+          ),
         ),
       ),
       floatingActionButton: ExpandableCreateTaskFab(
         onWrite: () => _openTaskForm(),
         onDictate: _openVoiceTaskRecording,
       ),
+      floatingActionButtonLocation: const ExFabAboveBottomNavLocation(),
     );
   }
 
-  // ── header ─────────────────────────────────────────────────────────────
-
   Widget _buildHeader(dynamic user) {
+    final c = context.ex;
     final String greeting =
         "Olá, ${user?.displayName?.split(' ')[0] ?? 'Usuário'}";
 
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -377,30 +391,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    greeting,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF2B2D42),
-                      letterSpacing: -1.0,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
+                  Text(greeting, style: ExText.display(c.textPrimary)),
+                  const SizedBox(height: 5),
                   Text(
                     'Veja o resumo das suas tarefas.',
-                    style:
-                        TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                    style: ExText.body(c.textSecondary),
                   ),
                 ],
               ),
             ),
-            IconButton(
-              tooltip: 'Sair',
-              onPressed: () => ref.read(authServiceProvider).signOut(),
-              icon: const Icon(Icons.logout_rounded),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            const SizedBox(width: ExSpace.s3),
+            _buildCircleIconButton(
+              icon: Icons.calendar_month_rounded,
+              tooltip: 'Calendário',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const CalendarAgendaScreen(),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -408,54 +418,199 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  // ── quadrants grid ─────────────────────────────────────────────────────
-
-  Widget _buildQuadrantsGrid({
-    required int todayCount,
-    required int scheduledCount,
-    required int allCount,
-    required int overdueCount,
+  Widget _buildCircleIconButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
   }) {
+    final c = context.ex;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: c.surface1,
+        shape: CircleBorder(side: BorderSide(color: c.border)),
+        child: InkWell(
+          onTap: onPressed,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: 42,
+            height: 42,
+            child: Icon(icon, size: 20, color: c.textSecondary),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOverdueSectionHeader(List<OverdueOccurrenceRow> rows) {
+    final c = context.ex;
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-        child: GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.65,
+        padding: const EdgeInsets.fromLTRB(24, 14, 24, 8),
+        child: Row(
           children: [
-            _DashboardTile(
-              icon: Icons.today_rounded,
-              label: 'Hoje',
-              count: todayCount,
-              gradient: const [Color(0xFF7B8CDE), Color(0xFF9FAEE6)],
-              onTap: () => _navigateToFilter(TaskFilterType.today),
+            Icon(Icons.warning_amber_rounded, color: c.errorText, size: 18),
+            const SizedBox(width: ExSpace.s2),
+            Expanded(
+              child: Text(
+                'Atrasadas · ${rows.length}',
+                style: ExText.h3(c.errorText).copyWith(fontSize: 14),
+              ),
             ),
-            _DashboardTile(
-              icon: Icons.schedule_rounded,
-              label: 'Agendadas',
-              count: scheduledCount,
-              gradient: const [Color(0xFFE8C547), Color(0xFFF0D86E)],
-              onTap: () => _navigateToFilter(TaskFilterType.scheduled),
-            ),
-            _DashboardTile(
-              icon: Icons.checklist_rounded,
-              label: 'Todas',
-              count: allCount,
-              gradient: const [Color(0xFF7DCFB6), Color(0xFFA0DFCD)],
-              onTap: () => _navigateToFilter(TaskFilterType.all),
-            ),
-            _DashboardTile(
-              icon: Icons.warning_amber_rounded,
-              label: 'Atrasadas',
-              count: overdueCount,
-              gradient: const [Color(0xFFE8A0BF), Color(0xFFF0BDD4)],
-              onTap: () => _navigateToFilter(TaskFilterType.overdue),
+            InkWell(
+              onTap: () => _showRescheduleOverduePicker(rows),
+              borderRadius: BorderRadius.circular(ExRadius.pill),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: ExSpace.s2,
+                  vertical: ExSpace.s1,
+                ),
+                child: Text(
+                  'Reagendar todas',
+                  style: ExText.body(c.errorText)
+                      .copyWith(fontWeight: FontWeight.w700, fontSize: 12),
+                ),
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildOverdueTaskSlivers({
+    required List<OverdueOccurrenceRow> rows,
+    required Map<String, UserPublicProfile?> assigneeProfileMap,
+    required Map<String, GroupModel> groupById,
+    required dynamic user,
+  }) {
+    final preview = rows.length > 5 ? 5 : rows.length;
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final row = rows[index];
+              final task = row.task;
+              return TaskAppearMotion(
+                key: ValueKey('home-overdue-${task.id}-${row.day}'),
+                child: TaskCard(
+                  task: task,
+                  displayDueOverride:
+                      displayDueForTaskOnCalendarDay(task, row.day),
+                  assigneeProfiles: assigneeProfileMap,
+                  selfUid: user?.uid,
+                  selfPhotoUrl: user?.photoURL,
+                  groupLabel: _resolveGroupLabel(task, groupById),
+                  groupAccentColor: _resolveGroupAccent(task, groupById),
+                  groupIconKey: _resolveGroupIconKey(task, groupById),
+                  onToggle: () async {
+                    final fs = ref.read(firebaseServiceProvider);
+                    final ns = ref.read(notificationServiceProvider);
+                    await completeTaskToggle(
+                      fs: fs,
+                      ns: ns,
+                      task: task,
+                      occurrenceCalendarDay: row.day,
+                    );
+                  },
+                  onEdit: () => _openTaskForm(task: task),
+                  onDelete: () => _deleteTask(task),
+                ),
+              );
+            },
+            childCount: preview,
+          ),
+        ),
+      ),
+      if (rows.length > 5)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: TextButton(
+              onPressed: () => _navigateToFilter(TaskFilterType.overdue),
+              child: Text(
+                'Ver todas as ${rows.length} atrasadas',
+                style: ExText.body(context.ex.errorText)
+                    .copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ),
+    ];
+  }
+
+  Widget _buildQuickNavRow({required int scheduledCount}) {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 6),
+        child: Wrap(
+          spacing: ExSpace.s2,
+          runSpacing: ExSpace.s2,
+          children: [
+            _buildQuickNavChip(
+              icon: Icons.schedule_rounded,
+              label: 'Agendadas · $scheduledCount',
+              onTap: () => _navigateToFilter(TaskFilterType.scheduled),
+            ),
+            _buildQuickNavChip(
+              icon: Icons.calendar_month_rounded,
+              label: 'Calendário',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const CalendarAgendaScreen(),
+                  ),
+                );
+              },
+            ),
+            _buildQuickNavChip(
+              icon: Icons.search_rounded,
+              label: 'Buscar',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const TaskSearchScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickNavChip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    final c = context.ex;
+    return Material(
+      color: c.surface2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ExRadius.pill),
+        side: BorderSide(color: c.border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(ExRadius.pill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: c.textSecondary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: ExText.body(c.textSecondary)
+                    .copyWith(fontWeight: FontWeight.w500, fontSize: 12),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -469,6 +624,59 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  List<Widget> _buildTodayCompletedSlivers({
+    required List<TaskModel> tasks,
+    required DateTime calendarDay,
+    required Map<String, UserPublicProfile?> assigneeProfileMap,
+    required Map<String, GroupModel> groupById,
+    required dynamic user,
+    required bool padBottomForFab,
+  }) {
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 4, 24, 8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(ExRadius.md),
+            onTap: () => setState(
+              () => _todayCompletedExpanded = !_todayCompletedExpanded,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    _todayCompletedExpanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 20,
+                    color: context.ex.textSecondary,
+                  ),
+                  const SizedBox(width: ExSpace.s1),
+                  Text(
+                    'Concluídas hoje · ${tasks.length}',
+                    style: ExText.label(context.ex.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      if (_todayCompletedExpanded)
+        ..._buildHomeTaskSlivers(
+          tasks: tasks,
+          calendarDay: calendarDay,
+          listKeyPrefix: 'home-today-done',
+          assigneeProfileMap: assigneeProfileMap,
+          groupById: groupById,
+          user: user,
+          padBottomForFab: padBottomForFab,
+          showAsCompleted: true,
+        ),
+    ];
+  }
+
   List<Widget> _buildHomeTaskSlivers({
     required List<TaskModel> tasks,
     required DateTime calendarDay,
@@ -477,8 +685,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required Map<String, GroupModel> groupById,
     required dynamic user,
     required bool padBottomForFab,
+    bool showAsCompleted = false,
+    int? maxPreview,
   }) {
-    final previewCount = tasks.length > 5 ? 5 : tasks.length;
+    final limit = maxPreview ?? tasks.length;
+    final previewCount = tasks.length > limit ? limit : tasks.length;
     return [
       SliverPadding(
         padding: EdgeInsets.fromLTRB(
@@ -497,13 +708,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   task: task,
                   displayDueOverride:
                       displayDueForTaskOnCalendarDay(task, calendarDay),
-                  isCompletedOverride:
+                  isCompletedOverride: showAsCompleted ||
                       isOccurrenceCompletedOnCalendarDay(task, calendarDay),
                   assigneeProfiles: assigneeProfileMap,
                   selfUid: user?.uid,
                   selfPhotoUrl: user?.photoURL,
                   groupLabel: _resolveGroupLabel(task, groupById),
                   groupAccentColor: _resolveGroupAccent(task, groupById),
+                  groupIconKey: _resolveGroupIconKey(task, groupById),
                   onToggle: () async {
                     final fs = ref.read(firebaseServiceProvider);
                     final ns = ref.read(notificationServiceProvider);
@@ -515,7 +727,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     );
                   },
                   onEdit: () => _openTaskForm(task: task),
-                  onDelete: () => _confirmAndDeleteTask(task),
+                  onDelete: () => _deleteTask(task),
                 ),
               );
             },
@@ -527,170 +739,71 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildDaySectionDivider(String label) {
+    final c = context.ex;
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 4),
         child: Row(
           children: [
-            Expanded(child: Divider(color: Colors.grey.shade300)),
+            Expanded(child: Divider(color: c.border)),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: ExSpace.s3),
               child: Text(
                 label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade600,
-                ),
+                style: ExText.body(c.textMuted)
+                    .copyWith(fontWeight: FontWeight.w600, fontSize: 12),
               ),
             ),
-            Expanded(child: Divider(color: Colors.grey.shade300)),
+            Expanded(child: Divider(color: c.border)),
           ],
         ),
       ),
     );
   }
 
-  // ── section title ──────────────────────────────────────────────────────
-
   Widget _buildSectionTitle(String title) {
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-        child: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2B2D42),
-          ),
-        ),
+        padding: const EdgeInsets.fromLTRB(24, 18, 24, 10),
+        child: Text(title, style: ExText.h2(context.ex.textPrimary)),
       ),
     );
   }
 
-  // ── empty upcoming state ───────────────────────────────────────────────
-
   Widget _buildEmptyUpcomingState() {
+    final c = context.ex;
     return Column(
       children: [
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: AppTheme.brandPrimary.withValues(alpha: 0.05),
+            color: ExColors.brandGreen.withValues(alpha: 0.10),
             shape: BoxShape.circle,
+            boxShadow: ExEffects.glowSm,
           ),
           child: const Icon(
             Icons.check_circle_outline_rounded,
             size: 48,
-            color: AppTheme.brandPrimary,
+            color: ExColors.brandGreen,
           ),
         ),
-        const SizedBox(height: 16),
-        const Text(
+        const SizedBox(height: ExSpace.s4),
+        Text(
           'Nenhuma tarefa pendente para hoje ou amanhã',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2B2D42),
-          ),
+          textAlign: TextAlign.center,
+          style: ExText.h3(c.textPrimary).copyWith(fontSize: 16),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: ExSpace.s2),
         TextButton(
           onPressed: () => _navigateToFilter(TaskFilterType.scheduled),
-          child: const Text(
+          child: Text(
             'Ver tarefas agendadas',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: AppTheme.brandPrimary,
-            ),
+            style:
+                ExText.body(c.textAccent).copyWith(fontWeight: FontWeight.w700),
           ),
         ),
       ],
-    );
-  }
-}
-
-// ── Dashboard Tile ─────────────────────────────────────────────────────
-
-class _DashboardTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final int count;
-  final List<Color> gradient;
-  final VoidCallback onTap;
-
-  const _DashboardTile({
-    required this.icon,
-    required this.label,
-    required this.count,
-    required this.gradient,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: gradient,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: gradient.first.withValues(alpha: 0.25),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.28),
-                    ),
-                    child: Icon(icon, color: Colors.white, size: 20),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '$count',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-              const Spacer(),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white.withValues(alpha: 0.9),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

@@ -7,7 +7,7 @@ import '../../business_logic/providers/task_provider.dart';
 import '../../data/models/task_model.dart';
 import '../../data/services/geofence_platform_service.dart';
 import '../../data/services/notification_service.dart';
-import '../theme/app_theme.dart';
+import '../widgets/eximium/eximium.dart';
 import 'groups_screen.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
@@ -44,32 +44,24 @@ class _MainShellState extends ConsumerState<MainShell> {
     ];
 
     return Scaffold(
-      body: IndexedStack(index: _index, children: screens),
-      bottomNavigationBar: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        child: NavigationBar(
-          selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
-          backgroundColor: AppTheme.cardSurface,
-          surfaceTintColor: Colors.transparent,
-          shadowColor: Colors.black.withValues(alpha: 0.08),
-          elevation: 12,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.groups_rounded),
-              label: 'Grupos',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.home_rounded),
-              label: 'Início',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_rounded),
-              label: 'Perfil',
-            ),
-          ],
-        ),
+      extendBody: true,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const ExAppBar(),
+          Expanded(
+            child: IndexedStack(index: _index, children: screens),
+          ),
+        ],
+      ),
+      bottomNavigationBar: ExBottomNav(
+        currentIndex: _index,
+        onTap: (i) => setState(() => _index = i),
+        items: const [
+          ExBottomNavItem(icon: Icons.groups_rounded, label: 'Grupos'),
+          ExBottomNavItem(icon: Icons.home_rounded, label: 'Início'),
+          ExBottomNavItem(icon: Icons.person_rounded, label: 'Perfil'),
+        ],
       ),
     );
   }

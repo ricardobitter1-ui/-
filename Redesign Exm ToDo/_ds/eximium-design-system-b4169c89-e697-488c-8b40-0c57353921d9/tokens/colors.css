@@ -1,0 +1,81 @@
+/*
+ * Eximium Design System — color tokens
+ * Brand invariants stay constant across products/themes.
+ * Surfaces, text and borders flip between dark (default) and light.
+ */
+
+:root {
+  /* ── Brand invariants ── */
+  --ex-brand-green:        #6DE2C0;  /* primary accent — CTAs, active borders, icons, waveforms */
+  --ex-brand-green-lt:     #AEF7E4;  /* hover states, soft glows */
+  --ex-brand-green-dk:     #014751;  /* deep gradients, dark accent areas */
+  --ex-brand-green-txt:    #1A9E85;  /* green TEXT on light backgrounds (WCAG AA) */
+  --ex-brand-lavender:     #7C82D6;  /* secondary tags, informational (sparing) */
+  --ex-brand-green-rgb:    109, 226, 192;  /* @kind other */
+  --ex-brand-lavender-rgb: 124, 130, 214;  /* @kind other */
+
+  /* ── Status colors (background invariant) ── */
+  --ex-color-success:    #6DE2C0;
+  --ex-color-success-bg: rgba(109, 226, 192, 0.12);
+  --ex-color-info:       #7C82D6;
+  --ex-color-info-bg:    rgba(124, 130, 214, 0.12);
+  --ex-color-error:      #FF6B6B;
+  --ex-color-error-bg:   rgba(255, 107, 107, 0.12);
+  --ex-color-warning:    #FFC457;
+  --ex-color-warning-bg: rgba(255, 196, 87, 0.12);
+}
+
+/* ── Dark mode — default ── */
+:root,
+.dark {
+  --ex-surface-0: #0A0A0A;  /* window base */
+  --ex-surface-1: #141414;  /* cards, panels */
+  --ex-surface-2: #1E1E1E;  /* inputs, hover areas */
+  --ex-surface-3: #2A2A2A;  /* borders, dividers */
+
+  --ex-text-primary:   #FFFFFF;
+  --ex-text-secondary: #999999;
+  --ex-text-muted:     #666666;
+  --ex-text-accent:    #6DE2C0;
+
+  --ex-border:        #2A2A2A;
+  --ex-border-accent: rgba(109, 226, 192, 0.25);
+
+  --ex-scrollbar-track:        transparent;
+  --ex-scrollbar-thumb:        #2A2A2A;
+  --ex-scrollbar-thumb-hover:  #3D3D3D;
+  --ex-scrollbar-thumb-active: rgba(109, 226, 192, 0.45);
+
+  /* status text in dark */
+  --ex-color-success: #6DE2C0;
+  --ex-color-info:    #7C82D6;
+  --ex-color-error:   #FF6B6B;
+  --ex-color-warning: #FFC457;
+}
+
+/* ── Light mode ── */
+.light {
+  --ex-surface-0: #F9F9F9;
+  --ex-surface-1: #FFFFFF;
+  --ex-surface-2: #F3F3F3;
+  --ex-surface-3: #E8E8E8;
+
+  --ex-text-primary:   #111111;
+  --ex-text-secondary: #555555;
+  --ex-text-muted:     #999999;
+  --ex-text-accent:    #1A9E85;  /* darkened green for legibility */
+
+  --ex-border:        #E5E5E5;
+  --ex-border-accent: rgba(109, 226, 192, 0.60);
+
+  --ex-scrollbar-track:        transparent;
+  --ex-scrollbar-thumb:        #D8D8D8;
+  --ex-scrollbar-thumb-hover:  #C2C2C2;
+  --ex-scrollbar-thumb-active: rgba(26, 158, 133, 0.55);
+
+  /* status text in light */
+  --ex-color-success: #1A9E85;
+  --ex-color-info:    #5C63B8;
+  --ex-color-error:   #CC4444;
+  --ex-color-warning: #A06010;
+}

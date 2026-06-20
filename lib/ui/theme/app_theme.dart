@@ -1,148 +1,199 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
+import 'eximium_colors.dart';
+import 'eximium_spacing.dart';
+import 'eximium_typography.dart';
+
+/// Tema do app no Eximium Design System (Material3, dark padrão + light).
+///
+/// As telas devem consumir cores via `context.ex` (ExColors). Os membros
+/// estáticos abaixo são **aliases de compatibilidade** mantidos para não
+/// quebrar imports durante a migração (fase 2). Prefira migrar os call-sites.
 class AppTheme {
-  /// Cor de marca (lavanda profunda, alinhada aos quadrantes pastel — substitui o azul saturado).
-  static const Color brandPrimary = Color(0xFF5F6FCE);
+  AppTheme._();
 
-  /// Roxo suave para gradientes com [brandPrimary] (presets de grupo / avatares).
-  static const Color brandSecondary = Color(0xFF9B8AD4);
+  // ─────────────────────────────────────────────────────────────
+  // Aliases de compatibilidade (deprecados — migrar gradualmente).
+  // ─────────────────────────────────────────────────────────────
 
-  /// Success Cyan — indicadores de conclusão (style guide).
-  static const Color successCyan = Color(0xFF00F5D4);
+  /// Acento de marca. Agora aponta para o verde do DS.
+  static const Color brandPrimary = ExColors.brandGreen;
 
-  static const Color backgroundLight = Color(0xFFF8F9FF);
-  static const Color cardSurface = Colors.white;
-  static const Color darkSurface = Color(0xFF121212);
+  /// Secundário (gradientes/avatares) — lavanda do DS.
+  static const Color brandSecondary = ExColors.lavender;
 
-  static const Color _titleColor = Color(0xFF2B2D42);
-  static const Color _mutedForeground = Color(0xFF6C757D);
+  /// Indicadores de conclusão — verde do DS.
+  static const Color successCyan = ExColors.brandGreen;
 
-  static ThemeData get lightTheme {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: brandPrimary,
-      primary: brandPrimary,
-      surface: cardSurface,
-    ).copyWith(surfaceTint: Colors.transparent);
+  /// Fundo de janela (aponta para tokens **dark** por compat).
+  static Color get backgroundLight => ExColors.dark.surface0;
 
-    final textTheme = GoogleFonts.nunitoTextTheme(
-      const TextTheme(
-        headlineMedium: TextStyle(
-          fontWeight: FontWeight.w800,
-          color: _titleColor,
-          letterSpacing: -1.0,
-        ),
-        titleLarge: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: _titleColor,
-        ),
-        bodyMedium: TextStyle(
-          color: _mutedForeground,
-          fontSize: 16,
-        ),
-      ),
+  /// Superfície de card (aponta para tokens **dark** por compat).
+  static Color get cardSurface => ExColors.dark.surface1;
+
+  /// Superfície escura legada.
+  static Color get darkSurface => ExColors.dark.surface1;
+
+  // ─────────────────────────────────────────────────────────────
+  // Temas
+  // ─────────────────────────────────────────────────────────────
+
+  static ThemeData get darkTheme => _buildTheme(ExColors.dark);
+
+  static ThemeData get lightTheme => _buildTheme(ExColors.light);
+
+  static ThemeData _buildTheme(ExColors ex) {
+    final bool isDark = ex.brightness == Brightness.dark;
+
+    final colorScheme = ColorScheme(
+      brightness: ex.brightness,
+      primary: ExColors.brandGreen,
+      onPrimary: ExColors.onBrandGreen,
+      secondary: ExColors.lavender,
+      onSecondary: Colors.white,
+      error: ExColors.error,
+      onError: Colors.white,
+      surface: ex.surface1,
+      onSurface: ex.textPrimary,
+      surfaceContainerHighest: ex.surface2,
+      outline: ex.border,
     );
 
-    final navLabelSelected = GoogleFonts.nunito(
-      fontSize: 12,
-      fontWeight: FontWeight.w800,
-      color: brandPrimary,
-    );
-    final navLabelDefault = GoogleFonts.nunito(
-      fontSize: 12,
-      fontWeight: FontWeight.w600,
-      color: _mutedForeground,
+    final textTheme = ExText.textThemeFor(ex.brightness).apply(
+      bodyColor: ex.textPrimary,
+      displayColor: ex.textPrimary,
     );
 
     return ThemeData(
-      scaffoldBackgroundColor: backgroundLight,
-      colorScheme: colorScheme,
       useMaterial3: true,
+      brightness: ex.brightness,
+      scaffoldBackgroundColor: ex.surface0,
+      colorScheme: colorScheme,
       textTheme: textTheme,
-
+      extensions: <ThemeExtension<dynamic>>[ex],
+      splashFactory: NoSplash.splashFactory,
       appBarTheme: AppBarTheme(
-        backgroundColor: backgroundLight,
-        foregroundColor: _titleColor,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: ex.textPrimary,
         elevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.nunito(
-          color: _titleColor,
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-          letterSpacing: -0.5,
-        ),
+        titleTextStyle: ExText.h1(ex.textPrimary),
+        iconTheme: IconThemeData(color: ex.textPrimary),
       ),
-
+      iconTheme: IconThemeData(color: ex.textPrimary),
+      dividerTheme: DividerThemeData(
+        color: ex.border,
+        thickness: 1,
+        space: 1,
+      ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: brandPrimary,
-        foregroundColor: Colors.white,
+        backgroundColor: ExColors.brandGreen,
+        foregroundColor: ExColors.onBrandGreen,
         elevation: 6,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(20)),
+          borderRadius: BorderRadius.all(Radius.circular(ExRadius.lg)),
         ),
       ),
-
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.grey.shade50,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        fillColor: ex.surface2,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: ExSpace.s4,
+          vertical: ExSpace.s4,
+        ),
+        hintStyle: ExText.bodyLg(ex.textMuted),
+        labelStyle: ExText.body(ex.textSecondary),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(24),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(ExRadius.md),
+          borderSide: BorderSide(color: ex.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(24),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(ExRadius.md),
+          borderSide: BorderSide(color: ex.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(24),
-          borderSide: const BorderSide(color: brandPrimary, width: 2.0),
+          borderRadius: BorderRadius.circular(ExRadius.md),
+          borderSide: const BorderSide(color: ExColors.brandGreen, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(ExRadius.md),
+          borderSide: const BorderSide(color: ExColors.error, width: 1.5),
         ),
       ),
-
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: brandPrimary,
-          foregroundColor: Colors.white,
+          backgroundColor: ExColors.brandGreen,
+          foregroundColor: ExColors.onBrandGreen,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
+          padding: const EdgeInsets.symmetric(
+            horizontal: ExSpace.s5,
+            vertical: ExSpace.s4,
           ),
-          textStyle: textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-            fontSize: 16,
-            color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ExRadius.pill),
+          ),
+          textStyle: ExText.h3(ExColors.onBrandGreen),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: ex.textAccent,
+          textStyle: ExText.h3(ex.textAccent),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: ex.textPrimary,
+          side: BorderSide(color: ex.border),
+          padding: const EdgeInsets.symmetric(
+            horizontal: ExSpace.s5,
+            vertical: ExSpace.s4,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ExRadius.pill),
           ),
         ),
       ),
-
-      navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: cardSurface,
+      cardTheme: CardThemeData(
+        color: ex.surface1,
         surfaceTintColor: Colors.transparent,
-        elevation: 10,
-        shadowColor: Colors.black.withValues(alpha: 0.07),
-        height: 72,
-        indicatorColor: brandPrimary.withValues(alpha: 0.14),
-        indicatorShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(ExRadius.lg),
+          side: BorderSide(color: ex.border),
         ),
-        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: ex.surface1,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(ExRadius.lg),
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: ex.surface1,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(ExRadius.xl),
+          ),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return navLabelSelected;
+            return ExColors.onBrandGreen;
           }
-          return navLabelDefault;
+          return isDark ? ex.textMuted : Colors.white;
         }),
-        iconTheme: WidgetStateProperty.resolveWith((states) {
+        trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return const IconThemeData(color: brandPrimary, size: 24);
+            return ExColors.brandGreen;
           }
-          return IconThemeData(
-            color: _mutedForeground.withValues(alpha: 0.88),
-            size: 24,
-          );
+          return ex.surface3;
         }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
       ),
     );
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_theme.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
 
 class CompletedTasksSectionHeader extends StatelessWidget {
   const CompletedTasksSectionHeader({
@@ -8,17 +10,20 @@ class CompletedTasksSectionHeader extends StatelessWidget {
     required this.expanded,
     required this.count,
     required this.onToggle,
+    this.title,
   });
 
   final bool expanded;
   final int count;
   final VoidCallback onToggle;
+  final String? title;
 
   @override
   Widget build(BuildContext context) {
-    final label = 'Concluídas ($count)';
+    final c = context.ex;
+    final label = '${title ?? 'Concluídas'} ($count)';
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 12),
+      padding: const EdgeInsets.only(top: ExSpace.s2, bottom: ExSpace.s3),
       child: Material(
         color: Colors.transparent,
         child: Semantics(
@@ -28,26 +33,22 @@ class CompletedTasksSectionHeader extends StatelessWidget {
               '$label. Toque para ${expanded ? 'recolher' : 'expandir'} a lista de tarefas concluídas.',
           child: InkWell(
             onTap: onToggle,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(ExRadius.md),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+              padding: const EdgeInsets.symmetric(
+                vertical: ExSpace.s3,
+                horizontal: ExSpace.s1,
+              ),
               child: Row(
                 children: [
                   Icon(
                     expanded
                         ? Icons.expand_less_rounded
                         : Icons.expand_more_rounded,
-                    color: AppTheme.brandPrimary,
+                    color: c.textAccent,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF2B2D42),
-                    ),
-                  ),
+                  const SizedBox(width: ExSpace.s2),
+                  Text(label, style: ExText.h3(c.textSecondary)),
                 ],
               ),
             ),

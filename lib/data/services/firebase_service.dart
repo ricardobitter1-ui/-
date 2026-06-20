@@ -11,10 +11,12 @@ import '../models/task_model.dart';
 import '../models/task_recurrence.dart';
 import '../models/tag_model.dart';
 import '../models/group_model.dart';
+import '../models/group_type.dart';
 import '../models/group_invite_model.dart';
 import '../models/user_public_profile.dart';
 import '../../business_logic/task_schedule_sort.dart';
 import '../../utils/calendar_day_key.dart';
+import '../../utils/firestore_timestamp_parse.dart';
 import '../../utils/title_search_key.dart';
 import 'auth_service.dart';
 import 'user_public_profile_sync.dart';
@@ -66,9 +68,8 @@ class FirebaseService {
   static bool _inferDueHasTime(Map<String, dynamic> data) {
     final v = data['dueHasTime'];
     if (v is bool) return v;
-    final ts = data['dueDate'] as Timestamp?;
-    if (ts == null) return false;
-    final d = ts.toDate();
+    final d = parseFirestoreDateTime(data['dueDate']);
+    if (d == null) return false;
     return d.hour != 0 || d.minute != 0 || d.second != 0;
   }
 
@@ -94,7 +95,7 @@ class FirebaseService {
     );
     var isCompleted = data['isCompleted'] ?? false;
     final reminderType = data['reminderType'] as String?;
-    final dueDate = (data['dueDate'] as Timestamp?)?.toDate();
+    final dueDate = parseFirestoreDateTime(data['dueDate']);
     final recurrence = TaskRecurrenceRule.fromMap(data['recurrence']);
     if (recurrence != null &&
         reminderType == 'datetime' &&
@@ -131,6 +132,8 @@ class FirebaseService {
       ),
       recurrence: recurrence,
       completedOccurrenceDateKeys: completedKeys,
+      completedAt: parseFirestoreDateTime(data['completedAt']),
+      createdAt: parseFirestoreDateTime(data['createdAt']),
     );
   }
 
@@ -283,7 +286,11 @@ class FirebaseService {
   }
 
   Future<void> toggleTaskCompletion(String taskId, bool currentStatus) async {
-    await _tasksCollection.doc(taskId).update({'isCompleted': !currentStatus});
+    final next = !currentStatus;
+    await _tasksCollection.doc(taskId).update({
+      'isCompleted': next,
+      'completedAt': next ? FieldValue.serverTimestamp() : null,
+    });
   }
 
   /// Concluir / desmarcar ocorrência no dia civil [dateKey] (`yyyy-MM-dd`).
@@ -297,6 +304,7 @@ class FirebaseService {
     if (completed) {
       await ref.update({
         'completedOccurrenceDateKeys': FieldValue.arrayUnion([dateKey]),
+        'completedAt': FieldValue.serverTimestamp(),
       });
     } else {
       await ref.update({
@@ -531,6 +539,20 @@ class FirebaseService {
       'name': group.name,
       'icon': group.icon,
       'color': group.color,
+      'type': groupTypeToFirestore(group.type),
+    });
+  }
+
+  Future<void> updateGroupType(String groupId, GroupType type) async {
+    if (uid == null) throw Exception('Usuário não autenticado');
+    final snap = await _groupsCollection.doc(groupId).get();
+    if (!snap.exists) throw Exception('Grupo não encontrado');
+    final g = GroupModel.fromMap(groupId, snap.data() as Map<String, dynamic>);
+    if (!g.isAdmin(uid)) {
+      throw Exception('Apenas administradores podem alterar o tipo do grupo');
+    }
+    await _groupsCollection.doc(groupId).update({
+      'type': groupTypeToFirestore(type),
     });
   }
 
@@ -682,6 +704,20 @@ class FirebaseService {
       if (inviterName.isNotEmpty) 'inviterName': inviterName,
       'createdAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// Gera ou reutiliza um link de convite pendente (sem exigir e-mail antes).
+  Future<String> ensureShareInviteUriForGroup(String groupId) async {
+    final existing = await getLatestPendingInviteShareUriForGroup(groupId);
+    if (existing != null && existing.isNotEmpty) return existing;
+
+    final syntheticUid = 'link_${_newShareToken()}';
+    await createInvite(groupId: groupId, inviteeUid: syntheticUid);
+    final uri = await getLatestPendingInviteShareUriForGroup(groupId);
+    if (uri == null || uri.isEmpty) {
+      throw Exception('Não foi possível gerar o link de convite');
+    }
+    return uri;
   }
 
   /// URI do convite mais recente pendente do grupo (admin). `null` se não houver.

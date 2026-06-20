@@ -7,9 +7,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
+import '../../business_logic/voice_extraction_plan.dart';
 import '../../business_logic/voice_recording_quality.dart';
 import '../../business_logic/voice_task_group_resolver.dart';
-import '../../debug/voice_perf_logger.dart';
+import '../../data/local/voice_capture_prefs.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/tag_model.dart';
 import '../../data/models/task_model.dart';
@@ -18,8 +19,13 @@ import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../../data/services/voice_api_config.dart';
 import '../../data/services/voice_task_pipeline.dart';
-import '../theme/app_theme.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_effects.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
+import 'eximium/eximium.dart';
 import 'voice_amplitude_waveform.dart';
+import 'voice_extraction_preview_sheet.dart';
 
 Future<void> showVoiceTaskRecordingSheet({
   required BuildContext context,
@@ -31,10 +37,7 @@ Future<void> showVoiceTaskRecordingSheet({
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
+    backgroundColor: Colors.transparent,
     builder: (ctx) => _VoiceTaskRecordingBody(
       groups: groups,
       forcedGroupId: forcedGroupId,
@@ -59,13 +62,17 @@ class _VoiceTaskRecordingBody extends ConsumerStatefulWidget {
       _VoiceTaskRecordingBodyState();
 }
 
-class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody> {
+class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody>
+    with SingleTickerProviderStateMixin {
   static const int _waveBarCount = 32;
+
+  late final AnimationController _pulseController;
 
   final AudioRecorder _recorder = AudioRecorder();
   bool _recording = false;
   bool _starting = false;
   bool _processing = false;
+  String _processingStage = '';
   String? _error;
   String? _tempPath;
   StreamSubscription<Amplitude>? _amplitudeSub;
@@ -77,6 +84,10 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
   @override
   void initState() {
     super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_startRecording());
     });
@@ -84,9 +95,19 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
 
   @override
   void dispose() {
+    _pulseController.dispose();
     _amplitudeSub?.cancel();
     unawaited(_recorder.dispose());
     super.dispose();
+  }
+
+  String _formatElapsed() {
+    final start = _recordingStartedAt;
+    if (start == null) return '00:00';
+    final d = DateTime.now().difference(start);
+    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$mm:$ss';
   }
 
   void _listenAmplitude() {
@@ -277,16 +298,12 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
 
     setState(() {
       _processing = true;
+      _processingStage = 'Carregando categorias…';
       _error = null;
     });
 
     final file = File(filePath);
     final pipeline = VoiceTaskPipeline();
-    // #region agent log
-    VoicePerfLogger.beginRun();
-    final totalSw = Stopwatch()..start();
-    final phasesMs = <String, int>{};
-    // #endregion
     try {
       String? ctxName = widget.contextGroup?.name;
       if (ctxName == null || ctxName.isEmpty) {
@@ -304,14 +321,11 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
       final ns = ref.read(notificationServiceProvider);
 
       final tagsCache = ref.read(groupTagsCacheProvider.notifier);
-      final tagsByGroupId = <String, List<TagModel>>{};
+      var tagsByGroupId = <String, List<TagModel>>{};
       final tagsByGroupName = <String, List<String>>{};
       final forcedGid = widget.forcedGroupId?.trim();
       final hasForcedGroup =
           forcedGid != null && forcedGid.isNotEmpty;
-      // #region agent log
-      var sw = Stopwatch()..start();
-      // #endregion
       if (hasForcedGroup) {
         final tags = await tagsCache.fetchTags(forcedGid);
         tagsByGroupId[forcedGid] = tags;
@@ -336,21 +350,15 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
           }),
         );
       }
-      // #region agent log
-      sw.stop();
-      phasesMs['firestore_prefetch_tags'] = sw.elapsedMilliseconds;
-      await VoicePerfLogger.phase(
-        'firestore_prefetch_tags',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'C',
-        data: {'groupCount': widget.groups.length},
-      );
-      sw = Stopwatch()..start();
-      // #endregion
+      if (mounted) {
+        setState(() => _processingStage = 'Transcrevendo áudio…');
+      }
+      GroupModel? forcedGroup;
       String? forcedGroupName;
       if (hasForcedGroup) {
         for (final g in widget.groups) {
           if (g.id == forcedGid) {
+            forcedGroup = g;
             forcedGroupName = g.name;
             break;
           }
@@ -362,22 +370,19 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
         groups: widget.groups,
         contextGroupName: ctxName,
         forcedGroupName: forcedGroupName,
+        forcedGroup: forcedGroup,
+        contextGroup: widget.contextGroup,
         hasForcedGroup: hasForcedGroup,
         tagsByGroupName: tagsByGroupName,
       );
-      // #region agent log
-      sw.stop();
-      phasesMs['transcribe_and_extract'] = sw.elapsedMilliseconds;
-      await VoicePerfLogger.phase(
-        'transcribe_and_extract_total',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'A,B',
-        data: {'taskCount': extraction.tasks.length},
-      );
-      // #endregion
+      if (mounted) {
+        setState(() => _processingStage = 'Organizando tarefas…');
+      }
+
       if (extraction.tasks.isEmpty) {
         setState(() {
           _processing = false;
+          _processingStage = '';
           _error = 'Não foi possível extrair tarefas a partir do áudio.';
         });
         try {
@@ -398,64 +403,81 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
       }
 
       final tasksByGroupId = <String, List<TaskModel>>{};
-      // #region agent log
-      sw = Stopwatch()..start();
-      var firestoreFetchMs = 0;
-      // #endregion
       await Future.wait(
         distinctGids.map((gid) async {
-          // #region agent log
-          final gidSw = Stopwatch()..start();
-          // #endregion
           tasksByGroupId[gid] = await fs.fetchTasksByGroupOnce(gid);
-          // #region agent log
-          gidSw.stop();
-          firestoreFetchMs += gidSw.elapsedMilliseconds;
-          await VoicePerfLogger.phase(
-            'firestore_fetch_tasks',
-            elapsedMs: gidSw.elapsedMilliseconds,
-            hypothesisId: 'C',
-            data: {
-              'groupId': gid,
-              'tasksCount': tasksByGroupId[gid]?.length ?? 0,
-            },
-          );
-          // #endregion
         }),
       );
-      // #region agent log
-      sw.stop();
-      phasesMs['firestore_fetch_all'] = sw.elapsedMilliseconds;
-      await VoicePerfLogger.phase(
-        'firestore_fetch_all',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'C',
-        data: {
-          'distinctGroupCount': distinctGids.length,
-          'sumPerGroupMs': firestoreFetchMs,
-        },
-      );
-      sw = Stopwatch()..start();
-      // #endregion
 
-      final enriched = await pipeline.enrichExtractedVoiceTasksWithTagAssignments(
+      var enriched = await pipeline.enrichExtractedVoiceTasksWithTagAssignments(
         tasks: extraction.tasks,
         groups: widget.groups,
         forcedGroupId: widget.forcedGroupId,
         tagsByGroupId: tagsByGroupId,
         transcript: extraction.transcript,
       );
-      // #region agent log
-      sw.stop();
-      phasesMs['enrich_tags'] = sw.elapsedMilliseconds;
-      await VoicePerfLogger.phase(
-        'enrich_tags_total',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'D',
-        data: {'taskCount': enriched.length},
+
+      var plan = buildVoiceExtractionPlan(
+        tasks: enriched,
+        groups: widget.groups,
+        forcedGroupId: widget.forcedGroupId,
+        tagsByGroupId: tagsByGroupId,
       );
-      sw = Stopwatch()..start();
-      // #endregion
+
+      final confirmBeforeSave = await loadVoiceConfirmBeforeSave();
+      if (confirmBeforeSave && mounted) {
+        setState(() => _processing = false);
+        final preview = await showVoiceExtractionPreviewSheet(
+          context: context,
+          initialPlan: plan,
+          groups: widget.groups,
+          forcedGroupId: widget.forcedGroupId,
+          tagsByGroupId: tagsByGroupId,
+          transcript: extraction.transcript,
+        );
+        if (!mounted) {
+          pipeline.dispose();
+          return;
+        }
+        if (preview == null) {
+          setState(() {
+            _processing = false;
+            _error = null;
+          });
+          pipeline.dispose();
+          try {
+            await file.delete();
+          } catch (_) {}
+          return;
+        }
+        plan = preview.plan;
+        setState(() {
+          _processing = true;
+          _processingStage = 'Salvando tarefas…';
+        });
+      }
+
+      if (mounted && _processing) {
+        setState(() => _processingStage = 'Salvando tarefas…');
+      }
+
+      if (plan.tagsToCreate.isNotEmpty) {
+        tagsByGroupId = await createPlannedVoiceTags(
+          tagsToCreate: plan.tagsToCreate,
+          firebase: fs,
+          tagsByGroupId: tagsByGroupId,
+        );
+        for (final t in plan.tagsToCreate) {
+          ref.read(groupTagsCacheProvider.notifier).invalidate(t.groupId);
+        }
+      }
+
+      enriched = canonicalizeTaskTagNames(
+        tasks: plan.tasks,
+        groups: widget.groups,
+        forcedGroupId: widget.forcedGroupId,
+        tagsByGroupId: tagsByGroupId,
+      );
 
       final stats = await persistExtractedVoiceTasksWithDedup(
         dtos: enriched,
@@ -467,22 +489,6 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
         tagsByGroupId: tagsByGroupId,
         deferReminderSync: true,
       );
-      // #region agent log
-      sw.stop();
-      phasesMs['persist_tasks'] = sw.elapsedMilliseconds;
-      await VoicePerfLogger.phase(
-        'persist_tasks',
-        elapsedMs: sw.elapsedMilliseconds,
-        hypothesisId: 'E',
-        data: {
-          'created': stats.created,
-          'reopened': stats.reopened,
-        },
-      );
-      totalSw.stop();
-      phasesMs['total'] = totalSw.elapsedMilliseconds;
-      await VoicePerfLogger.summary(phasesMs);
-      // #endregion
       pipeline.dispose();
       try {
         await file.delete();
@@ -512,107 +518,199 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
   }
 
   String get _statusText {
-    if (_processing) return 'A transcrever e a criar tarefas…';
-    if (_starting) return 'A preparar o microfone…';
+    if (_processing) {
+      return _processingStage.isNotEmpty
+          ? _processingStage
+          : 'Processando ditado…';
+    }
+    if (_starting) return 'Preparando o microfone…';
     if (_recording) {
       return 'Fale com calma. Toque no quadrado vermelho quando terminar.';
     }
     if (_error != null) return 'Ajuste a gravação e tente novamente.';
-    return 'A iniciar gravação…';
+    return 'Iniciando gravação…';
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = context.ex;
     final bottom = MediaQuery.paddingOf(context).bottom;
     final canStop = _recording && !_processing;
     final canCancel = !_processing;
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(24, 20, 24, 20 + bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Ditar tarefa',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF2B2D42),
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        final t = _recording ? _pulseController.value : 0.0;
+        final borderColor = Color.lerp(
+          ExColors.brandGreen.withValues(alpha: 0.35),
+          ExColors.brandGreen,
+          t,
+        )!;
+        return Container(
+          decoration: BoxDecoration(
+            color: c.surface1,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(ExRadius.xl),
             ),
+            border: Border.all(color: borderColor, width: 1.5),
+            boxShadow: _recording
+                ? [
+                    BoxShadow(
+                      color: ExColors.brandGreen.withValues(
+                        alpha: 0.18 + 0.22 * t,
+                      ),
+                      blurRadius: 24 + 16 * t,
+                    ),
+                  ]
+                : c.shadowFloat,
           ),
-          const SizedBox(height: 12),
-          Text(
-            _statusText,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.redAccent, fontSize: 13),
-            ),
-          ],
-          const SizedBox(height: 28),
-          if (_processing)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 32),
-                child: Column(
-                  children: [
-                    CircularProgressIndicator(color: AppTheme.brandPrimary),
-                    SizedBox(height: 16),
-                    Text('A transcrever e a criar tarefas…'),
-                  ],
-                ),
-              ),
-            )
-          else ...[
-            VoiceAmplitudeWaveform(
-              levels: _waveLevels,
-              barCount: _waveBarCount,
-              height: 80,
-              activeColor: _recording ? AppTheme.brandPrimary : Colors.grey.shade400,
-            ),
-            const SizedBox(height: 32),
+          child: child,
+        );
+      },
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(24, 12, 24, 16 + bottom),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
             Center(
-              child: _VoiceStopButton(
-                enabled: canStop,
-                onPressed: canStop ? _confirmRecording : null,
-              ),
-            ),
-            const SizedBox(height: 20),
-            TextButton(
-              onPressed: canCancel ? _stopAndDiscard : null,
-              child: Text(
-                'Cancelar',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: canCancel ? Colors.grey.shade700 : Colors.grey.shade400,
+              child: Container(
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: c.surface3,
+                  borderRadius: BorderRadius.circular(ExRadius.pill),
                 ),
               ),
             ),
-            if (_error != null && !_recording) ...[
-              const SizedBox(height: 4),
-              TextButton(
-                onPressed: canCancel ? () => unawaited(_startRecording()) : null,
-                child: const Text('Tentar novamente'),
+            const SizedBox(height: ExSpace.s5),
+            Text(
+              'Ditar tarefa',
+              textAlign: TextAlign.center,
+              style: ExText.h2(c.textPrimary),
+            ),
+            const SizedBox(height: ExSpace.s3),
+            Text(
+              _statusText,
+              textAlign: TextAlign.center,
+              style: ExText.body(c.textSecondary),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: ExSpace.s3),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: ExText.body(c.errorText),
               ),
             ],
-          ],
-        ],
+            const SizedBox(height: ExSpace.s6),
+            if (_processing)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: ExSpace.s8),
+                  child: Column(
+                    children: [
+                      const CircularProgressIndicator(
+                        color: ExColors.brandGreen,
+                      ),
+                      const SizedBox(height: ExSpace.s4),
+                      Text(
+                        'Processando ditado…',
+                        style: ExText.body(c.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else ...[
+              if (_recording)
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: ExSpace.s3,
+                      vertical: ExSpace.s2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: ExColors.errorBg,
+                      borderRadius: BorderRadius.circular(ExRadius.pill),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ExDot(color: c.errorText, size: 8),
+                        const SizedBox(width: ExSpace.s2),
+                        Text(
+                          'Gravando · ${_formatElapsed()}',
+                          style: ExText.mono(size: 13, color: c.errorText),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              const SizedBox(height: ExSpace.s6),
+              VoiceAmplitudeWaveform(
+                levels: _waveLevels,
+                barCount: _waveBarCount,
+                height: 80,
+                activeColor:
+                    _recording ? ExColors.brandGreen : c.textMuted,
+              ),
+              const SizedBox(height: ExSpace.s8),
+              Center(
+                child: _VoiceMicButton(
+                  enabled: canStop,
+                  onPressed: canStop ? _confirmRecording : null,
+                ),
+              ),
+              const SizedBox(height: ExSpace.s6),
+              Row(
+                children: [
+                  Expanded(
+                    child: ExButton(
+                      label: 'Cancelar',
+                      variant: ExButtonVariant.secondary,
+                      expand: true,
+                      onPressed: canCancel ? _stopAndDiscard : null,
+                    ),
+                  ),
+                  const SizedBox(width: ExSpace.s3),
+                  Expanded(
+                    child: ExButton(
+                      label: 'Concluir',
+                      variant: ExButtonVariant.primary,
+                      expand: true,
+                      onPressed: canStop ? _confirmRecording : null,
+                    ),
+                  ),
+                ],
+              ),
+              if (_error != null && !_recording) ...[
+                const SizedBox(height: ExSpace.s2),
+                Center(
+                  child: TextButton(
+                    onPressed:
+                        canCancel ? () => unawaited(_startRecording()) : null,
+                    child: const Text('Tentar novamente'),
+                  ),
+                ),
+              ],
+            ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-/// Botão circular de parar gravação (quadrado vermelho no centro).
-class _VoiceStopButton extends StatelessWidget {
-  const _VoiceStopButton({
+/// Botão circular grande verde com microfone (glow) — conclui o ditado.
+class _VoiceMicButton extends StatelessWidget {
+  const _VoiceMicButton({
     required this.enabled,
     required this.onPressed,
   });
@@ -622,6 +720,7 @@ class _VoiceStopButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.ex;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -632,25 +731,14 @@ class _VoiceStopButton extends StatelessWidget {
           height: 88,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: enabled
-                ? AppTheme.brandPrimary.withValues(alpha: 0.1)
-                : Colors.grey.shade100,
-            border: Border.all(
-              color: enabled
-                  ? AppTheme.brandPrimary.withValues(alpha: 0.35)
-                  : Colors.grey.shade300,
-              width: 2,
-            ),
+            color: enabled ? ExColors.brandGreen : c.surface3,
+            boxShadow: enabled ? ExEffects.glowLg : null,
           ),
           child: Center(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: enabled ? const Color(0xFFE53935) : Colors.grey.shade400,
-                borderRadius: BorderRadius.circular(7),
-              ),
+            child: Icon(
+              Icons.mic_rounded,
+              size: 36,
+              color: enabled ? ExColors.onBrandGreen : c.textMuted,
             ),
           ),
         ),

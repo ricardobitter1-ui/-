@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/models/tag_model.dart';
+import '../theme/eximium_colors.dart';
 
 /// Cores sugeridas para etiquetas de grupo (nome + cor no Firestore).
 const List<int> kGroupTagPresetColors = <int>[
@@ -82,7 +83,9 @@ class _GroupTagNameColorDialogState extends State<GroupTagNameColorDialog> {
                       color: Color(c),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: sel ? Colors.black : Colors.transparent,
+                        color: sel
+                            ? context.ex.textPrimary
+                            : Colors.transparent,
                         width: 3,
                       ),
                     ),
@@ -104,7 +107,7 @@ class _GroupTagNameColorDialogState extends State<GroupTagNameColorDialog> {
             if (name.isEmpty) return;
             Navigator.pop(context, (name: name, color: _pickedColor));
           },
-          child: Text(_isEdit ? 'Guardar' : 'Criar'),
+          child: Text(_isEdit ? 'Salvar' : 'Criar'),
         ),
       ],
     );

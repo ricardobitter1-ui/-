@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../utils/firestore_timestamp_parse.dart';
+
 /// Unidade do intervalo em "Cada N …".
 enum RecurrenceUnit {
   day,
@@ -130,7 +132,7 @@ class TaskRecurrenceRule {
         break;
       }
     }
-    final endDate = (m['endDate'] as Timestamp?)?.toDate();
+    final endDate = parseFirestoreDateTime(m['endDate']);
     final maxOcc = (m['maxOccurrences'] as num?)?.toInt();
     return TaskRecurrenceRule(
       interval: interval < 1 ? 1 : interval,

@@ -37,7 +37,7 @@ class OpenAiCompatibleChatClient {
     VoiceExtractRequest request,
     String modelId,
   ) async {
-    final system = VoiceExtractPromptBuilder.systemPromptFor(request.mode);
+    final system = VoiceExtractPromptBuilder.systemPromptFor(request);
     final user = VoiceExtractPromptBuilder.buildUserContent(request);
     final messages = [
       {'role': 'system', 'content': system},

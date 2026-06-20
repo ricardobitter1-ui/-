@@ -20,5 +20,20 @@ void main() {
       );
       expect(title, 'Cortar o cabelo');
     });
+
+    test('sanitizeShoppingItemTitle strips comprar prefix', () {
+      expect(
+        VoiceTaskTitleSanitizer.sanitizeShoppingItemTitle('Comprar macarrão'),
+        'Macarrão',
+      );
+      expect(
+        VoiceTaskTitleSanitizer.sanitizeShoppingItemTitle('pegar o feijão'),
+        'Feijão',
+      );
+      expect(
+        VoiceTaskTitleSanitizer.sanitizeShoppingItemTitle('Arroz integral'),
+        'Arroz integral',
+      );
+    });
   });
 }

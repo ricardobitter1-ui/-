@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'eximium_colors.dart';
+
 /// Opção do seletor de ícone de grupo (chave persistida em [GroupModel.icon]).
 class GroupIconChoice {
   const GroupIconChoice({
@@ -88,6 +90,7 @@ class GroupIconPickerBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ex = context.ex;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -108,19 +111,19 @@ class GroupIconPickerBar extends StatelessWidget {
                       border: Border.all(
                         color: c.key == selectedKey
                             ? selectionBorderColor
-                            : Colors.grey.shade300,
+                            : ex.border,
                         width: c.key == selectedKey ? 2.5 : 1,
                       ),
                       color: c.key == selectedKey
                           ? selectionBorderColor.withValues(alpha: 0.12)
-                          : Colors.grey.shade100,
+                          : ex.surface2,
                     ),
                     child: Icon(
                       c.icon,
                       size: 22,
                       color: c.key == selectedKey
                           ? selectionBorderColor
-                          : Colors.grey.shade700,
+                          : ex.textSecondary,
                     ),
                   ),
                 ),
