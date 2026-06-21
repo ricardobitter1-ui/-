@@ -6,6 +6,20 @@ Registro pessoal de decisões e estado do projeto.
 
 ## Log de decisões
 
+### 2026-06-20 — Unificar branch redesign com trabalho recente (limpeza automática + ditado)
+
+**O que mudou**
+- Estava na branch `ux-review` (sem o redesign visual). Mudei para `redesign` e reapliquei o trabalho desta sessão: limpeza automática, fix de tags/dedup no ditado, modelo OpenRouter.
+- Resolvi conflito em `partitioned_group_task_list.dart` — mantive o UI Eximium da redesign **e** o botão **A** de limpeza automática.
+
+**Por que mudou**
+- O redesign estava salvo na branch `redesign`, mas eu rodava `ux-review` — por isso a interface antiga continuava aparecendo.
+
+**O que aprendi**
+- `git stash` + `checkout redesign` + `stash pop` é o caminho certo para juntar trabalho local com outra branch. Hot reload não reflete mudanças de branch — precisa recompilar.
+
+---
+
 ### 2026-06-12 — Redesign UI Fase 2: todas as telas no Eximium Design System
 
 **O que mudou**
@@ -107,9 +121,13 @@ Registro pessoal de decisões e estado do projeto.
 
 ## Estado atual
 
+**Branch ativa:** `redesign` (unificada com trabalho de 2026-06-20). Alterações locais **não commitadas**: limpeza automática, fix ditado/tags, modelo OpenRouter.
+
 **App:** to-do com grupos, ditado por voz, etiquetas por grupo, lista particionada.
 
-**Redesign (Eximium DS):** **concluído** (Fase 1 fundação + Fase 2 todas as telas). Dark é o padrão, com toggle de tema no Perfil. Tokens/primitivos em `lib/ui/theme/` e `lib/ui/widgets/eximium/`; todas as telas/sheets migradas para `context.ex`. `flutter analyze` sem erros/warnings novos (27 issues restantes são pré-existentes). **Pendente de validação no telefone** e **iterações opcionais:** realce do termo na busca e timeline por hora na agenda (ficaram fora por exigirem mudança de API/dados). Guia: `Redesign Exm ToDo/FLUTTER_IMPLEMENTATION_GUIDE.md`.
+**Redesign (Eximium DS):** **concluído** (Fase 1 fundação + Fase 2 todas as telas). Dark é o padrão, com toggle de tema no Perfil. Tokens/primitivos em `lib/ui/theme/` e `lib/ui/widgets/eximium/`; todas as telas/sheets migradas para `context.ex`. **Rodar a partir da branch `redesign`.** Pendente de validação no telefone.
+
+**Limpeza automática (novo, local):** botão **A** em grupos de supermercado — LLM categoriza itens sem tag, remove duplicados, bottom sheet de revisão antes de salvar. Requer `OPENROUTER_API_KEY` e recompilação com `secrets.json`.
 
 **Ditado por voz:**
 - Lembrete com data/hora (fluxo próprio).

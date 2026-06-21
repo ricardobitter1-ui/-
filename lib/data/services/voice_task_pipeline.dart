@@ -17,7 +17,8 @@ import '../models/task_model.dart';
 import 'firebase_service.dart';
 import 'groq_transcription_service.dart';
 import 'notification_service.dart';
-import 'openrouter_voice_task_service.dart';
+import 'voice/tag_assignment_llm_service.dart';
+import 'voice_api_config.dart';
 import 'voice/voice_extract_request.dart';
 import 'voice/voice_llm_client.dart';
 import 'voice/voice_llm_client_factory.dart';
@@ -27,14 +28,17 @@ class VoiceTaskPipeline {
   VoiceTaskPipeline({
     GroqTranscriptionService? groq,
     VoiceLlmClient? llm,
-    OpenRouterVoiceTaskService? openRouterTagFallback,
+    TagAssignmentLlmService? tagAssignment,
   })  : _groq = groq ?? GroqTranscriptionService(),
         _llm = llm ?? VoiceLlmClientFactory.create(),
-        _openRouterTagFallback = openRouterTagFallback;
+        _tagAssignment = tagAssignment ??
+            (VoiceApiConfig.hasGroqKey || VoiceApiConfig.hasOpenRouterKey
+                ? TagAssignmentLlmService()
+                : null);
 
   final GroqTranscriptionService _groq;
   final VoiceLlmClient _llm;
-  final OpenRouterVoiceTaskService? _openRouterTagFallback;
+  final TagAssignmentLlmService? _tagAssignment;
 
   Future<VoiceTranscriptionExtractionResult> transcribeAndExtract({
     required File audioFile,
@@ -204,7 +208,7 @@ class VoiceTaskPipeline {
     String? forcedGroupId,
     required Map<String, List<TagModel>> tagsByGroupId,
     String? transcript,
-    bool allowLlmTagFallback = false,
+    bool allowLlmTagFallback = true,
   }) async {
     if (tasks.isEmpty) return tasks;
 
@@ -225,7 +229,8 @@ class VoiceTaskPipeline {
       out[i] = out[i].copyWith(tagName: canonical);
     }
 
-    if (!allowLlmTagFallback || _openRouterTagFallback == null) return out;
+    final useTagFallback = allowLlmTagFallback && _tagAssignment != null;
+    if (!useTagFallback) return out;
 
     final byGroup = <String, List<int>>{};
     for (var i = 0; i < out.length; i++) {
@@ -247,7 +252,7 @@ class VoiceTaskPipeline {
 
       final indices = e.value;
       final titles = indices.map((i) => out[i].title).toList();
-      final assigned = await _openRouterTagFallback.assignShoppingTags(
+      final assigned = await _tagAssignment.assignShoppingTags(
         itemTitles: titles,
         tags: tags,
         transcriptContext: transcript,
@@ -281,7 +286,7 @@ class VoiceTaskPipeline {
   void dispose() {
     _groq.close();
     _llm.close();
-    _openRouterTagFallback?.close();
+    _tagAssignment?.close();
   }
 }
 
@@ -330,6 +335,13 @@ void _replaceTaskInCache(Map<String, List<TaskModel>> cache, TaskModel updated) 
   if (list == null) return;
   final i = list.indexWhere((t) => t.id == updated.id);
   if (i >= 0) list[i] = updated;
+}
+
+bool _sameTagIds(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  final sa = a.toSet();
+  final sb = b.toSet();
+  return sa.length == sb.length && sa.containsAll(sb);
 }
 
 List<String> _tagIdsForDto(
@@ -419,6 +431,15 @@ Future<VoicePersistResult> persistExtractedVoiceTasksWithDedup({
     final dup = item.duplicate;
 
     if (dup != null && groupId != null && groupId.isNotEmpty) {
+      if (!dup.isCompleted) {
+        if (tagIds.isNotEmpty && !_sameTagIds(tagIds, dup.tagIds)) {
+          final tagged = dup.copyWith(tagIds: tagIds);
+          await firebase.updateTask(tagged);
+          _replaceTaskInCache(cache, tagged);
+        }
+        return const _PersistOutcome(created: 0, reopened: 0);
+      }
+
       final newTagIds =
           tagIds.isNotEmpty ? tagIds : List<String>.from(dup.tagIds);
       final shouldClearOcc = dup.recurrence != null && dup.isCompleted;

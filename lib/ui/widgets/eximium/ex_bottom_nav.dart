@@ -29,6 +29,17 @@ class ExBottomNav extends StatelessWidget {
   final ValueChanged<int> onTap;
   final List<ExBottomNavItem> items;
 
+  /// Padding inferior para listas/conteúdo rolável acima da barra flutuante.
+  static double scrollBottomPadding(
+    BuildContext context, {
+    double gap = ExSpace.s4,
+  }) {
+    return MediaQuery.paddingOf(context).bottom +
+        ExFabAboveBottomNavLocation.navOuterBottomMargin +
+        ExFabAboveBottomNavLocation.navHeight +
+        gap;
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.ex;
