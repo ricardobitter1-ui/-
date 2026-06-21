@@ -66,6 +66,8 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
   late final TextEditingController _titleController;
   late final TextEditingController _descController;
   final FocusNode _titleFocus = FocusNode();
+  final FocusNode _descFocus = FocusNode();
+  final GlobalKey _descFieldKey = GlobalKey();
 
   bool _showDescriptionSection = false;
   bool _showTagsSection = false;
@@ -214,6 +216,7 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     }
 
     _titleFocus.addListener(_onTitleFocusChanged);
+    _descFocus.addListener(_onDescFocusChanged);
 
     if (!_isEditing) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -236,10 +239,27 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     if (mounted) setState(() {});
   }
 
+  void _onDescFocusChanged() {
+    if (!_descFocus.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _descFieldKey.currentContext;
+      if (ctx != null && mounted) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.05,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
   @override
   void dispose() {
     _titleFocus.removeListener(_onTitleFocusChanged);
+    _descFocus.removeListener(_onDescFocusChanged);
     _titleFocus.dispose();
+    _descFocus.dispose();
     _titleController.dispose();
     _descController.dispose();
     super.dispose();
@@ -846,12 +866,16 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
     if (_showDescriptionSection) {
       children.add(
         TextField(
+          key: _descFieldKey,
           controller: _descController,
+          focusNode: _descFocus,
           decoration: const InputDecoration(
             hintText: 'Detalhe a tarefa (opcional)',
             border: OutlineInputBorder(),
           ),
-          maxLines: 4,
+          minLines: 4,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
           textCapitalization: TextCapitalization.sentences,
         ),
       );
@@ -892,6 +916,11 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
       FocusManager.instance.primaryFocus?.unfocus();
     }
     setState(() => _showDescriptionSection = !_showDescriptionSection);
+    if (opening) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _descFocus.requestFocus();
+      });
+    }
   }
 
   void _toggleTagsSection() {
@@ -1072,118 +1101,125 @@ class _TaskFormModalState extends ConsumerState<TaskFormModal> {
                 ],
               ),
               const SizedBox(height: ExSpace.s4),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                decoration: BoxDecoration(
-                  color: c.surface2,
-                  borderRadius: BorderRadius.circular(ExRadius.md),
-                  border: titleFocused
-                      ? ExEffects.focusBorder()
-                      : Border.all(color: c.border),
-                  boxShadow: titleFocused ? ExEffects.focusRing : null,
-                ),
-                child: TextField(
-                  controller: _titleController,
-                  focusNode: _titleFocus,
-                  autofocus: false,
-                  style: ExText.h3(c.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: continuous
-                        ? 'O que falta comprar?'
-                        : 'O que você precisa fazer?',
-                    hintStyle: ExText.h3(c.textMuted),
-                    filled: false,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: ExSpace.s4,
-                      vertical: ExSpace.s4,
-                    ),
+              Flexible(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        decoration: BoxDecoration(
+                          color: c.surface2,
+                          borderRadius: BorderRadius.circular(ExRadius.md),
+                          border: titleFocused
+                              ? ExEffects.focusBorder()
+                              : Border.all(color: c.border),
+                          boxShadow: titleFocused ? ExEffects.focusRing : null,
+                        ),
+                        child: TextField(
+                          controller: _titleController,
+                          focusNode: _titleFocus,
+                          autofocus: false,
+                          style: ExText.h3(c.textPrimary),
+                          decoration: InputDecoration(
+                            hintText: continuous
+                                ? 'O que falta comprar?'
+                                : 'O que você precisa fazer?',
+                            hintStyle: ExText.h3(c.textMuted),
+                            filled: false,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: ExSpace.s4,
+                              vertical: ExSpace.s4,
+                            ),
+                          ),
+                          textCapitalization: TextCapitalization.sentences,
+                        ),
+                      ),
+                      if (widget.showReminderQuickActions && _isEditing) ...[
+                        const SizedBox(height: ExSpace.s3),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ExButton(
+                                label: 'Marcar como concluída',
+                                variant: ExButtonVariant.secondary,
+                                size: ExButtonSize.sm,
+                                expand: true,
+                                onPressed: _isLoading ? null : _quickMarkComplete,
+                              ),
+                            ),
+                            const SizedBox(width: ExSpace.s2),
+                            Expanded(
+                              child: ExButton(
+                                label: 'Reprogramar',
+                                variant: ExButtonVariant.secondary,
+                                size: ExButtonSize.sm,
+                                expand: true,
+                                onPressed: _isLoading ? null : _openScheduleDialog,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: ExSpace.s4),
+                      Wrap(
+                        spacing: ExSpace.s2,
+                        runSpacing: ExSpace.s2,
+                        children: [
+                          _ActionChip(
+                            icon: Icons.notes_rounded,
+                            label: 'Descrição',
+                            selected: _showDescriptionSection,
+                            onTap: _toggleDescriptionSection,
+                          ),
+                          if (!continuous)
+                            _ActionChip(
+                              icon: Icons.event_rounded,
+                              label: 'Lembrete',
+                              selected: _reminderType != 'none',
+                              onTap: _openScheduleDialog,
+                            ),
+                          if (_canPickGroup)
+                            _ActionChip(
+                              icon: Icons.group_rounded,
+                              label: 'Grupo',
+                              selected: _selectedGroupForNewTask != null,
+                              onTap: _openGroupPickerSheet,
+                            ),
+                          if (_showTagSelector)
+                            _ActionChip(
+                              icon: Icons.label_rounded,
+                              label: 'Etiquetas',
+                              selected: _showTagsSection,
+                              onTap: _toggleTagsSection,
+                            ),
+                          if (_showAssignees)
+                            _ActionChip(
+                              icon: Icons.people_rounded,
+                              label: 'Responsáveis',
+                              selected: _showAssigneesSection,
+                              onTap: _toggleAssigneesSection,
+                            ),
+                        ],
+                      ),
+                      if (_anyOptionalSectionOpen) ...[
+                        const SizedBox(height: ExSpace.s3),
+                        _buildOptionalSections(
+                          context,
+                          profilesAsync,
+                          me,
+                          collab,
+                        ),
+                      ],
+                    ],
                   ),
-                  textCapitalization: TextCapitalization.sentences,
                 ),
               ),
-              if (widget.showReminderQuickActions && _isEditing) ...[
-                const SizedBox(height: ExSpace.s3),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ExButton(
-                        label: 'Marcar como concluída',
-                        variant: ExButtonVariant.secondary,
-                        size: ExButtonSize.sm,
-                        expand: true,
-                        onPressed: _isLoading ? null : _quickMarkComplete,
-                      ),
-                    ),
-                    const SizedBox(width: ExSpace.s2),
-                    Expanded(
-                      child: ExButton(
-                        label: 'Reprogramar',
-                        variant: ExButtonVariant.secondary,
-                        size: ExButtonSize.sm,
-                        expand: true,
-                        onPressed: _isLoading ? null : _openScheduleDialog,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: ExSpace.s4),
-              Wrap(
-                spacing: ExSpace.s2,
-                runSpacing: ExSpace.s2,
-                children: [
-                  _ActionChip(
-                    icon: Icons.notes_rounded,
-                    label: 'Descrição',
-                    selected: _showDescriptionSection,
-                    onTap: _toggleDescriptionSection,
-                  ),
-                  if (!continuous)
-                    _ActionChip(
-                      icon: Icons.event_rounded,
-                      label: 'Lembrete',
-                      selected: _reminderType != 'none',
-                      onTap: _openScheduleDialog,
-                    ),
-                  if (_canPickGroup)
-                    _ActionChip(
-                      icon: Icons.group_rounded,
-                      label: 'Grupo',
-                      selected: _selectedGroupForNewTask != null,
-                      onTap: _openGroupPickerSheet,
-                    ),
-                  if (_showTagSelector)
-                    _ActionChip(
-                      icon: Icons.label_rounded,
-                      label: 'Etiquetas',
-                      selected: _showTagsSection,
-                      onTap: _toggleTagsSection,
-                    ),
-                  if (_showAssignees)
-                    _ActionChip(
-                      icon: Icons.people_rounded,
-                      label: 'Responsáveis',
-                      selected: _showAssigneesSection,
-                      onTap: _toggleAssigneesSection,
-                    ),
-                ],
-              ),
-              if (_anyOptionalSectionOpen) ...[
-                const SizedBox(height: ExSpace.s3),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: _buildOptionalSections(
-                      context,
-                      profilesAsync,
-                      me,
-                      collab,
-                    ),
-                  ),
-                ),
-              ],
               const SizedBox(height: ExSpace.s4),
               Divider(height: 1, color: c.border),
               SafeArea(

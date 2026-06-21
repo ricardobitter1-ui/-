@@ -7,6 +7,7 @@ import '../../business_logic/completed_tasks_sort.dart';
 import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../business_logic/task_list_partition.dart';
 import '../../business_logic/task_occurrence_display.dart';
+import '../../business_logic/voice_shopping_list_context.dart';
 import '../../data/local/completed_section_prefs.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/tag_model.dart';
@@ -14,6 +15,9 @@ import '../../data/models/task_model.dart';
 import '../../data/models/user_public_profile.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
+import '../../data/services/shopping_list_cleanup_service.dart';
+import '../../data/services/voice/tag_assignment_llm_service.dart';
+import '../../data/services/voice_api_config.dart';
 import '../../utils/title_search_key.dart';
 import '../theme/color_utils.dart';
 import '../theme/eximium_colors.dart';
@@ -22,6 +26,7 @@ import '../theme/eximium_typography.dart';
 import 'completed_section_tag_filter_bar.dart';
 import 'completed_tasks_section_header.dart';
 import 'eximium/eximium.dart';
+import 'shopping_list_cleanup_sheet.dart';
 import 'task_appear_motion.dart';
 import 'task_card.dart';
 import 'task_form_modal.dart';
@@ -418,6 +423,39 @@ class _PartitionedGroupTaskListState
     );
   }
 
+  Future<void> _runAutoCleanup(BuildContext context) async {
+    if (!VoiceApiConfig.hasGroqKey && !VoiceApiConfig.hasOpenRouterKey) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Limpeza automática precisa de GROQ_API_KEY ou OPENROUTER_API_KEY em secrets.json.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final service = ShoppingListCleanupService();
+    try {
+      await runShoppingListCleanupFlow(
+        context: context,
+        tasks: widget.tasks,
+        tags: widget.tags,
+        buildPlan: () => service.buildPlan(
+          tasks: widget.tasks,
+          tags: widget.tags,
+        ),
+        applyPlan: (plan) => applyShoppingListCleanupPlan(
+          plan: plan,
+          firebase: ref.read(firebaseServiceProvider),
+          notification: ref.read(notificationServiceProvider),
+        ),
+      );
+    } finally {
+      service.dispose();
+    }
+  }
+
   List<Widget> _buildActiveByTag(
     BuildContext context,
     List<TaskModel> active,
@@ -558,28 +596,65 @@ class _PartitionedGroupTaskListState
 
     final showEmptyGroup =
         q.isEmpty && active.isEmpty && completed.isEmpty;
+    final showAutoCleanup =
+        VoiceShoppingListContext.isShoppingListGroupName(widget.group.name);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: [
         if (widget.listPrefix != null) ...widget.listPrefix!,
-        TextField(
-          controller: _searchController,
-          decoration: InputDecoration(
-            hintText: 'Pesquisar tarefas…',
-            prefixIcon: const Icon(Icons.search_rounded),
-            suffixIcon: _searchController.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear_rounded),
-                    onPressed: () => _searchController.clear(),
-                  )
-                : null,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Pesquisar tarefas…',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded),
+                          onPressed: () => _searchController.clear(),
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  isDense: true,
+                ),
+                textInputAction: TextInputAction.search,
+              ),
             ),
-            isDense: true,
-          ),
-          textInputAction: TextInputAction.search,
+            if (showAutoCleanup) ...[
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Limpeza automática',
+                child: Material(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: () => _runAutoCleanup(context),
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: Center(
+                        child: Text(
+                          'A',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         if (showBulk)
           Padding(

@@ -393,6 +393,9 @@ class _VoiceTaskRecordingBodyState extends ConsumerState<_VoiceTaskRecordingBody
       }
 
       final distinctGids = <String>{};
+      if (hasForcedGroup) {
+        distinctGids.add(forcedGid);
+      }
       for (final dto in extraction.tasks) {
         final gid = resolveGroupId(
           groupNameFromLlm: dto.groupName,

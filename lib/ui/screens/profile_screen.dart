@@ -473,11 +473,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           top: false,
           bottom: false,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(
+            padding: EdgeInsets.fromLTRB(
               ExSpace.s5,
               ExSpace.s1,
               ExSpace.s5,
-              ExSpace.s8,
+              ExBottomNav.scrollBottomPadding(context),
             ),
             children: [
               Text('Perfil', style: ExText.h1(c.textPrimary)),

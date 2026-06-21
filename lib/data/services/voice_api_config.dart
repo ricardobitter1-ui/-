@@ -5,9 +5,11 @@ abstract final class VoiceApiConfig {
       String.fromEnvironment('GROQ_API_KEY', defaultValue: '');
   static const String openRouterApiKey =
       String.fromEnvironment('OPENROUTER_API_KEY', defaultValue: '');
+  /// Modelo de chat/completions no OpenRouter (tags, extração por voz).
+  /// Deve ser um modelo de chat — não usar modelos de rerank/embeddings.
   static const String openRouterModel = String.fromEnvironment(
     'OPENROUTER_MODEL',
-    defaultValue: 'google/gemini-2.0-flash-001',
+    defaultValue: 'meta-llama/llama-3.3-70b-instruct:free',
   );
   static const String openRouterHttpReferer = String.fromEnvironment(
     'OPENROUTER_HTTP_REFERER',
