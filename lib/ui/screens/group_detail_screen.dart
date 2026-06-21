@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,7 +23,6 @@ import '../widgets/edit_group_sheet.dart';
 import '../widgets/eximium/eximium.dart';
 import '../widgets/group_tag_name_color_dialog.dart';
 import '../widgets/expandable_create_task_fab.dart';
-import '../widgets/group_activity_section.dart';
 import '../widgets/partitioned_group_task_list.dart';
 import '../widgets/task_form_modal.dart';
 import '../widgets/voice_task_recording_sheet.dart';
@@ -473,7 +470,7 @@ class GroupDetailScreen extends ConsumerWidget {
   ) {
     final profileMap = profilesAsync.value ?? {};
     return [
-      _GroupProgressCard(
+      _GroupStatStrip(
         group: g,
         tasks: tasks,
         profiles: profileMap,
@@ -487,22 +484,6 @@ class GroupDetailScreen extends ConsumerWidget {
           child: Text(
             'Grupo pessoal — não pode ser compartilhado.',
             style: ExText.body(context.ex.textSecondary),
-          ),
-        ),
-      if (!g.isPersonal)
-        Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            initiallyExpanded: false,
-            title: Text(
-              'Atividade recente',
-              style: ExText.label(context.ex.textSecondary),
-            ),
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: EdgeInsets.zero,
-            children: [
-              GroupActivitySection(tasks: tasks, profiles: profileMap),
-            ],
           ),
         ),
       ExpansionTile(
@@ -724,9 +705,10 @@ class GroupDetailScreen extends ConsumerWidget {
   }
 }
 
-/// Card de progresso do grupo: anel circular com %, contagens e avatares.
-class _GroupProgressCard extends StatelessWidget {
-  const _GroupProgressCard({
+/// Faixa compacta de progresso do grupo: %, contagem, barra e avatares
+/// dos membros na mesma linha (mock "Detalhe do grupo · versão final").
+class _GroupStatStrip extends StatelessWidget {
+  const _GroupStatStrip({
     required this.group,
     required this.tasks,
     required this.profiles,
@@ -757,137 +739,96 @@ class _GroupProgressCard extends StatelessWidget {
     const maxAvatars = 3;
     final shown = members.take(maxAvatars).toList();
     final extra = members.length - shown.length;
+    final showMembers = !group.isPersonal && members.isNotEmpty;
 
-    return ExCard(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 76,
-            height: 76,
-            child: CustomPaint(
-              painter: _RingPainter(
-                progress: progress,
-                trackColor: c.surface3,
-                progressColor: ExColors.brandGreen,
-              ),
-              child: Center(
-                child: Text(
-                  '$percent%',
-                  style: ExText.mono(
-                    size: 18,
-                    color: c.textPrimary,
-                    weight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: ExSpace.s4),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '$completed de $total concluídas',
-                  style: ExText.h3(c.textPrimary),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      '$percent%',
+                      style: ExText.mono(
+                        size: 16,
+                        color: c.textAccent,
+                        weight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: ExSpace.s2),
+                    Expanded(
+                      child: Text(
+                        total == 0
+                            ? 'Sem tarefas'
+                            : pending == 0
+                                ? '$completed/$total · tudo em dia'
+                                : '$completed/$total · $pending pendentes',
+                        style: ExText.body(c.textSecondary),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: ExSpace.s1),
-                Text(
-                  pending == 0
-                      ? 'Tudo em dia'
-                      : '$pending pendentes hoje',
-                  style: ExText.body(c.textSecondary),
-                ),
-                if (!group.isPersonal && members.isNotEmpty) ...[
-                  const SizedBox(height: ExSpace.s3),
-                  Row(
-                    children: [
-                      for (var i = 0; i < shown.length; i++)
-                        Align(
-                          widthFactor: i == 0 ? 1.0 : 0.7,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: c.surface1, width: 2),
-                            ),
-                            child: CustomAvatar(
-                              photoUrl: memberPhotoUrl(
-                                shown[i],
-                                profiles,
-                                selfUid: selfUid,
-                                selfPhotoUrl: selfPhotoUrl,
-                              ),
-                              displayName: memberDisplayLabel(shown[i], profiles),
-                              radius: 13,
-                            ),
-                          ),
-                        ),
-                      if (extra > 0)
-                        Padding(
-                          padding: const EdgeInsets.only(left: ExSpace.s2),
-                          child: Text(
-                            '+$extra',
-                            style: ExText.body(c.textSecondary)
-                                .copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                    ],
+                const SizedBox(height: ExSpace.s2),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(ExRadius.pill),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 6,
+                    backgroundColor: c.surface3,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(c.textAccent),
                   ),
-                ],
+                ),
               ],
             ),
           ),
+          if (showMembers) ...[
+            const SizedBox(width: ExSpace.s4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < shown.length; i++)
+                  Align(
+                    widthFactor: i == 0 ? 1.0 : 0.62,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: c.surface0, width: 2),
+                      ),
+                      child: CustomAvatar(
+                        photoUrl: memberPhotoUrl(
+                          shown[i],
+                          profiles,
+                          selfUid: selfUid,
+                          selfPhotoUrl: selfPhotoUrl,
+                        ),
+                        displayName: memberDisplayLabel(shown[i], profiles),
+                        radius: 15,
+                      ),
+                    ),
+                  ),
+                if (extra > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(left: ExSpace.s2),
+                    child: Text(
+                      '+$extra',
+                      style: ExText.body(c.textSecondary)
+                          .copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
-}
-
-/// Anel de progresso circular (CustomPaint).
-class _RingPainter extends CustomPainter {
-  _RingPainter({
-    required this.progress,
-    required this.trackColor,
-    required this.progressColor,
-  });
-
-  final double progress;
-  final Color trackColor;
-  final Color progressColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const stroke = 7.0;
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.shortestSide - stroke) / 2;
-
-    final trackPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round
-      ..color = trackColor;
-    canvas.drawCircle(center, radius, trackPaint);
-
-    if (progress <= 0) return;
-    final progressPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round
-      ..shader = ExColors.gradientBrand.createShader(
-        Rect.fromCircle(center: center, radius: radius),
-      );
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -math.pi / 2,
-      2 * math.pi * progress.clamp(0.0, 1.0),
-      false,
-      progressPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_RingPainter old) =>
-      old.progress != progress ||
-      old.trackColor != trackColor ||
-      old.progressColor != progressColor;
 }

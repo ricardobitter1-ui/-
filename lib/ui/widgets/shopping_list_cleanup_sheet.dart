@@ -5,6 +5,9 @@ import '../../data/models/tag_model.dart';
 import '../../data/models/task_model.dart';
 import '../../data/services/voice/tag_assignment_llm_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/eximium_colors.dart';
+import '../theme/eximium_spacing.dart';
+import '../theme/eximium_typography.dart';
 
 Future<bool?> showShoppingListCleanupReviewSheet({
   required BuildContext context,
@@ -80,7 +83,7 @@ class _ShoppingListCleanupReviewBody extends StatelessWidget {
                 : ListView.separated(
                     shrinkWrap: true,
                     itemCount: changes.length,
-                    separatorBuilder: (_, _i) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (ctx, i) =>
                         _ChangeTile(change: changes[i], tags: tags),
                   ),
@@ -202,30 +205,254 @@ class _ChangeTile extends StatelessWidget {
 }
 
 Future<bool> confirmShoppingListCleanupDialog(BuildContext context) async {
-  final ok = await showDialog<bool>(
+  final ok = await showModalBottomSheet<bool>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Limpeza automática'),
-      content: const Text(
-        'A IA vai analisar esta lista e propor alterações:\n\n'
-        '• Etiquetar itens sem categoria\n'
-        '• Remover duplicados (mantém um item por nome)\n'
-        '• Reativar itens concluídos que eram duplicados\n\n'
-        'Nada é guardado até reveres e confirmares.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Continuar'),
-        ),
-      ],
-    ),
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => const _CleanupConfirmSheet(),
   );
   return ok == true;
+}
+
+/// Folha de confirmação da limpeza automática, no estilo do Eximium DS.
+class _CleanupConfirmSheet extends StatelessWidget {
+  const _CleanupConfirmSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    final bottom = MediaQuery.paddingOf(context).bottom;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface1,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(ExRadius.xl),
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(22, 12, 22, 26 + bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // pega da folha
+            Center(
+              child: Container(
+                width: 42,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: BoxDecoration(
+                  color: c.surface3,
+                  borderRadius: BorderRadius.circular(ExRadius.pill),
+                ),
+              ),
+            ),
+            // ícone com gradiente
+            Center(
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(ExRadius.lg),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      ExColors.lavender.withValues(alpha: 0.18),
+                      ExColors.brandGreen.withValues(alpha: 0.16),
+                    ],
+                  ),
+                ),
+                child: Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 28,
+                  color: c.infoText,
+                ),
+              ),
+            ),
+            const SizedBox(height: ExSpace.s4),
+            Text(
+              'Limpeza automática',
+              textAlign: TextAlign.center,
+              style: ExText.h1(c.textPrimary),
+            ),
+            const SizedBox(height: ExSpace.s2),
+            Text(
+              'A IA vai revisar sua lista e aplicar estas mudanças:',
+              textAlign: TextAlign.center,
+              style: ExText.bodyLg(c.textSecondary),
+            ),
+            const SizedBox(height: ExSpace.s5),
+            _CleanupAction(
+              icon: Icons.content_copy_rounded,
+              tint: ExColors.brandGreen,
+              tintText: c.successText,
+              title: 'Remover duplicatas',
+              subtitle: 'Itens repetidos são unificados',
+            ),
+            const SizedBox(height: ExSpace.s2 + 2),
+            _CleanupAction(
+              icon: Icons.sort_rounded,
+              tint: ExColors.lavender,
+              tintText: c.infoText,
+              title: 'Organizar categorias',
+              subtitle: 'Itens vão para a etiqueta certa',
+            ),
+            const SizedBox(height: ExSpace.s4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.info_outline_rounded, size: 15, color: c.textMuted),
+                const SizedBox(width: ExSpace.s2),
+                Text(
+                  'Você poderá revisar antes de salvar.',
+                  style: ExText.body(c.textMuted),
+                ),
+              ],
+            ),
+            const SizedBox(height: ExSpace.s5),
+            _PrimaryPillButton(
+              label: 'Organizar lista',
+              onPressed: () => Navigator.pop(context, true),
+            ),
+            const SizedBox(height: ExSpace.s3 - 2),
+            _GhostPillButton(
+              label: 'Cancelar',
+              onPressed: () => Navigator.pop(context, false),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Linha de ação proposta dentro da folha de confirmação.
+class _CleanupAction extends StatelessWidget {
+  const _CleanupAction({
+    required this.icon,
+    required this.tint,
+    required this.tintText,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final Color tint;
+  final Color tintText;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+      decoration: BoxDecoration(
+        color: c.surface2,
+        borderRadius: BorderRadius.circular(ExRadius.md + 4),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(ExRadius.md - 1),
+            ),
+            child: Icon(icon, size: 19, color: tintText),
+          ),
+          const SizedBox(width: ExSpace.s3 + 1),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: ExText.body(c.textPrimary)
+                      .copyWith(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                const SizedBox(height: 1),
+                Text(subtitle, style: ExText.body(c.textSecondary)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrimaryPillButton extends StatelessWidget {
+  const _PrimaryPillButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(ExRadius.pill),
+        boxShadow: [
+          BoxShadow(
+            color: ExColors.brandGreen.withValues(alpha: 0.4),
+            blurRadius: 22,
+          ),
+        ],
+      ),
+      child: Material(
+        color: ExColors.brandGreen,
+        shape: const StadiumBorder(),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onPressed,
+          child: SizedBox(
+            height: 50,
+            child: Center(
+              child: Text(
+                label,
+                style: ExText.h3(ExColors.onBrandGreen),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GhostPillButton extends StatelessWidget {
+  const _GhostPillButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    return Material(
+      color: Colors.transparent,
+      shape: StadiumBorder(side: BorderSide(color: c.border)),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onPressed,
+        child: SizedBox(
+          height: 50,
+          child: Center(
+            child: Text(
+              label,
+              style: ExText.h3(c.textSecondary)
+                  .copyWith(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 Future<void> runShoppingListCleanupFlow({

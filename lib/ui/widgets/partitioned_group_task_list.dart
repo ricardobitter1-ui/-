@@ -8,7 +8,6 @@ import '../../business_logic/providers/user_public_profile_provider.dart';
 import '../../business_logic/task_list_partition.dart';
 import '../../business_logic/task_occurrence_display.dart';
 import '../../business_logic/voice_shopping_list_context.dart';
-import '../../data/local/completed_section_prefs.dart';
 import '../../data/models/group_model.dart';
 import '../../data/models/tag_model.dart';
 import '../../data/models/task_model.dart';
@@ -16,15 +15,12 @@ import '../../data/models/user_public_profile.dart';
 import '../../data/services/firebase_service.dart';
 import '../../data/services/notification_service.dart';
 import '../../data/services/shopping_list_cleanup_service.dart';
-import '../../data/services/voice/tag_assignment_llm_service.dart';
 import '../../data/services/voice_api_config.dart';
 import '../../utils/title_search_key.dart';
 import '../theme/color_utils.dart';
 import '../theme/eximium_colors.dart';
 import '../theme/eximium_spacing.dart';
 import '../theme/eximium_typography.dart';
-import 'completed_section_tag_filter_bar.dart';
-import 'completed_tasks_section_header.dart';
 import 'eximium/eximium.dart';
 import 'shopping_list_cleanup_sheet.dart';
 import 'task_appear_motion.dart';
@@ -33,6 +29,9 @@ import 'task_form_modal.dart';
 
 /// Chave da secção "Sem etiqueta" no acordeão da lista do grupo.
 const _kSemEtiquetaSection = '_sem_etiqueta';
+
+/// Aba ativa na lista do grupo: pendentes ou concluídas.
+enum _GroupTaskTab { pending, completed }
 
 /// Mensagem quando o grupo ainda não tem tarefas (lista vazia, sem pesquisa).
 const kEmptyGroupTasksMessage =
@@ -61,8 +60,9 @@ class PartitionedGroupTaskList extends ConsumerStatefulWidget {
 
 class _PartitionedGroupTaskListState
     extends ConsumerState<PartitionedGroupTaskList> {
-  late bool _completedExpanded;
   String? _completedFilterTagId;
+  String? _activeFilterTagId;
+  _GroupTaskTab _tab = _GroupTaskTab.pending;
 
   final TextEditingController _searchController = TextEditingController();
   String _lastNormSearchQuery = '';
@@ -72,9 +72,7 @@ class _PartitionedGroupTaskListState
   @override
   void initState() {
     super.initState();
-    _completedExpanded = true;
     _searchController.addListener(_onSearchChanged);
-    _loadPrefs();
   }
 
   void _onSearchChanged() {
@@ -103,25 +101,19 @@ class _PartitionedGroupTaskListState
     super.dispose();
   }
 
-  Future<void> _loadPrefs() async {
-    final key = CompletedSectionPrefsKeys.groupDetail(widget.group.id);
-    final v = await loadCompletedSectionExpanded(key);
-    if (mounted) setState(() => _completedExpanded = v);
-  }
-
   @override
   void didUpdateWidget(PartitionedGroupTaskList oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.group.id != widget.group.id) {
-      _completedExpanded = true;
       _completedFilterTagId = null;
+      _activeFilterTagId = null;
+      _tab = _GroupTaskTab.pending;
       _collapsedSectionKeys = {};
       _collapsedSnapshotBeforeSearch = null;
       _searchController.removeListener(_onSearchChanged);
       _lastNormSearchQuery = '';
       _searchController.clear();
       _searchController.addListener(_onSearchChanged);
-      _loadPrefs();
     }
   }
 
@@ -145,20 +137,121 @@ class _PartitionedGroupTaskListState
     return out;
   }
 
-  String? _effectiveCompletedFilter(
-    List<TagModel> filterTags,
-    String? stored,
-  ) {
-    if (stored == null) return null;
-    return filterTags.any((t) => t.id == stored) ? stored : null;
-  }
-
   List<TaskModel> _applyCompletedFilter(
     List<TaskModel> completed,
     String? tagId,
   ) {
     if (tagId == null) return completed;
     return completed.where((t) => t.tagIds.contains(tagId)).toList();
+  }
+
+  /// Etiquetas (resolvidas) presentes em [tasks], na ordem de descoberta.
+  List<TagModel> _tagsUsedIn(List<TaskModel> tasks) {
+    final byId = {for (final t in widget.tags) t.id: t};
+    final seen = <String>{};
+    final out = <TagModel>[];
+    for (final task in tasks) {
+      for (final id in task.tagIds) {
+        final tag = byId[id];
+        if (tag != null && seen.add(id)) out.add(tag);
+      }
+    }
+    return out;
+  }
+
+  String? _effectiveTagFilter(List<TagModel> choices, String? stored) {
+    if (stored == null) return null;
+    return choices.any((t) => t.id == stored) ? stored : null;
+  }
+
+  List<TaskModel> _applyTagFilter(List<TaskModel> tasks, String? tagId) {
+    if (tagId == null) return tasks;
+    return tasks.where((t) => t.tagIds.contains(tagId)).toList();
+  }
+
+  /// Abre a folha de filtro por etiqueta para a aba atual.
+  Future<void> _openFilterSheet(
+    BuildContext context,
+    List<TagModel> choices,
+    String? selected,
+  ) async {
+    final c = context.ex;
+    final picked = await showModalBottomSheet<String?>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          decoration: BoxDecoration(
+            color: c.surface1,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(ExRadius.xl),
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 5,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: c.surface3,
+                        borderRadius: BorderRadius.circular(ExRadius.pill),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: ExSpace.s3, left: 2),
+                    child: Text(
+                      'Filtrar por etiqueta',
+                      style: ExText.h2(c.textPrimary),
+                    ),
+                  ),
+                  Wrap(
+                    spacing: ExSpace.s2,
+                    runSpacing: ExSpace.s2,
+                    children: [
+                      _FilterChoiceChip(
+                        label: 'Todas',
+                        selected: selected == null,
+                        onTap: () => Navigator.pop(ctx, null),
+                      ),
+                      for (final t in choices)
+                        _FilterChoiceChip(
+                          label: t.name,
+                          dotColor: Color(t.color),
+                          selected: selected == t.id,
+                          onTap: () => Navigator.pop(
+                            ctx,
+                            selected == t.id ? null : t.id,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted) return;
+    // `picked == null` é ambíguo (cancelou ou escolheu "Todas"); o chip "Todas"
+    // fecha com null e o utilizador raramente cancela, então tratamos null como
+    // "limpar filtro".
+    setState(() {
+      if (_tab == _GroupTaskTab.pending) {
+        _activeFilterTagId = picked;
+      } else {
+        _completedFilterTagId = picked;
+      }
+    });
   }
 
   void _openEdit(BuildContext context, TaskModel task) {
@@ -584,83 +677,95 @@ class _PartitionedGroupTaskListState
         : completedSorted.where((t) => t.titleSearchKey.contains(q)).toList();
 
     final tagById = {for (final t in widget.tags) t.id: t};
-    final sectionKeys = _allActiveSectionKeys(activeFiltered, tagById);
+
+    final activeTagChoices = _tagsUsedIn(activeFiltered);
+    final completedTagChoices = _tagsUsedInCompleted(completedFiltered);
+    final activeFilter = _effectiveTagFilter(activeTagChoices, _activeFilterTagId);
+    final completedFilter =
+        _effectiveTagFilter(completedTagChoices, _completedFilterTagId);
+    final activeVisible = _applyTagFilter(activeFiltered, activeFilter);
+    final completedVisible =
+        _applyCompletedFilter(completedFiltered, completedFilter);
+
+    final sectionKeys = _allActiveSectionKeys(activeVisible, tagById);
     final showBulk = sectionKeys.length >= 2;
 
-    final prefsKey = CompletedSectionPrefsKeys.groupDetail(widget.group.id);
-    final filterTagChoices = _tagsUsedInCompleted(completedFiltered);
-    final effectiveFilter =
-        _effectiveCompletedFilter(filterTagChoices, _completedFilterTagId);
-    final completedVisible =
-        _applyCompletedFilter(completedFiltered, effectiveFilter);
-
-    final showEmptyGroup =
-        q.isEmpty && active.isEmpty && completed.isEmpty;
+    final showEmptyGroup = q.isEmpty && active.isEmpty && completed.isEmpty;
     final showAutoCleanup =
         VoiceShoppingListContext.isShoppingListGroupName(widget.group.name);
+
+    final isPending = _tab == _GroupTaskTab.pending;
+    final currentFilter = isPending ? activeFilter : completedFilter;
+    final currentChoices = isPending ? activeTagChoices : completedTagChoices;
+    final searchHint = widget.group.typeConfig.continuous || showAutoCleanup
+        ? 'Buscar item…'
+        : 'Pesquisar tarefas…';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: [
         if (widget.listPrefix != null) ...widget.listPrefix!,
+        // ── Barra de ferramentas: busca + IA + filtro ──
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Pesquisar tarefas…',
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded),
-                          onPressed: () => _searchController.clear(),
-                        )
-                      : null,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  isDense: true,
-                ),
-                textInputAction: TextInputAction.search,
-              ),
-            ),
+            Expanded(child: _buildSearchPill(context, searchHint)),
             if (showAutoCleanup) ...[
-              const SizedBox(width: 8),
-              Tooltip(
-                message: 'Limpeza automática',
-                child: Material(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    onTap: () => _runAutoCleanup(context),
-                    borderRadius: BorderRadius.circular(12),
-                    child: SizedBox(
-                      width: 48,
-                      height: 48,
-                      child: Center(
-                        child: Text(
-                          'A',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.grey.shade800,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              const SizedBox(width: ExSpace.s2 + 1),
+              _ToolbarIconButton(
+                icon: Icons.auto_awesome_rounded,
+                tooltip: 'Limpeza automática',
+                color: context.ex.infoText,
+                background: ExColors.lavender.withValues(alpha: 0.10),
+                borderColor: ExColors.lavender.withValues(alpha: 0.40),
+                onTap: () => _runAutoCleanup(context),
               ),
             ],
+            const SizedBox(width: ExSpace.s2 + 1),
+            _ToolbarIconButton(
+              icon: Icons.tune_rounded,
+              tooltip: 'Filtrar e ordenar',
+              color: currentFilter != null
+                  ? context.ex.textAccent
+                  : context.ex.textSecondary,
+              background: currentFilter != null
+                  ? ExColors.brandGreen.withValues(alpha: 0.12)
+                  : context.ex.surface2,
+              borderColor: currentFilter != null
+                  ? context.ex.borderAccent
+                  : null,
+              onTap: () =>
+                  _openFilterSheet(context, currentChoices, currentFilter),
+            ),
           ],
         ),
-        if (showBulk)
+        const SizedBox(height: ExSpace.s3),
+        // ── Abas Pendentes / Concluídas ──
+        Row(
+          children: [
+            _TabPill(
+              label: 'Pendentes',
+              count: activeFiltered.length,
+              selected: isPending,
+              onTap: () => setState(() => _tab = _GroupTaskTab.pending),
+            ),
+            const SizedBox(width: ExSpace.s2),
+            _TabPill(
+              label: 'Concluídas',
+              count: completedFiltered.length,
+              selected: !isPending,
+              onTap: () => setState(() => _tab = _GroupTaskTab.completed),
+            ),
+          ],
+        ),
+        if (currentFilter != null) ...[
+          const SizedBox(height: ExSpace.s3),
+          _activeFilterRow(context, tagById[currentFilter]),
+        ],
+        if (isPending && showBulk)
           Padding(
-            padding: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.only(top: ExSpace.s1),
             child: Wrap(
-              spacing: 4,
+              spacing: ExSpace.s1,
               children: [
                 TextButton(
                   onPressed: () => setState(() => _collapsedSectionKeys = {}),
@@ -675,14 +780,8 @@ class _PartitionedGroupTaskListState
               ],
             ),
           ),
-        if (q.isNotEmpty && activeFiltered.isEmpty && active.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
-            child: Text(
-              'Nenhuma tarefa ativa corresponde à pesquisa.',
-              style: ExText.bodyLg(context.ex.textSecondary),
-            ),
-          ),
+        const SizedBox(height: ExSpace.s3),
+        // ── Conteúdo da aba ──
         if (showEmptyGroup)
           Padding(
             padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
@@ -691,56 +790,272 @@ class _PartitionedGroupTaskListState
               textAlign: TextAlign.center,
               style: ExText.bodyLg(context.ex.textSecondary),
             ),
-          ),
-        if (activeFiltered.isNotEmpty) ...[
-          const SizedBox(height: ExSpace.s4),
-          ExSectionLabel(label: 'Pendentes', count: activeFiltered.length),
-          const SizedBox(height: ExSpace.s2),
-        ],
-        ..._buildActiveByTag(context, activeFiltered, profileMap, me, today),
-        if (completed.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          CompletedTasksSectionHeader(
-            expanded: _completedExpanded,
-            count: completedVisible.length,
-            title: widget.group.typeConfig.completionLabel,
-            onToggle: () async {
-              final next = !_completedExpanded;
-              setState(() => _completedExpanded = next);
-              await saveCompletedSectionExpanded(prefsKey, next);
-            },
-          ),
-          if (_completedExpanded) ...[
-            if (filterTagChoices.isNotEmpty)
-              CompletedSectionTagFilterBar(
-                tags: filterTagChoices,
-                selectedTagId: effectiveFilter,
-                onSelect: (id) {
-                  setState(() => _completedFilterTagId = id);
-                },
-              ),
-            if (completedVisible.isEmpty)
+          )
+        else if (isPending) ...[
+          if (q.isNotEmpty && activeFiltered.isEmpty && active.isNotEmpty)
+            _tabEmptyMessage(
+              context,
+              'Nenhuma tarefa pendente corresponde à pesquisa.',
+            )
+          else if (activeVisible.isEmpty && currentFilter != null)
+            _tabEmptyMessage(
+              context,
+              'Nenhuma tarefa pendente com esta etiqueta.',
+            )
+          else if (activeVisible.isEmpty)
+            _tabEmptyMessage(context, 'Tudo concluído por aqui! 🎉')
+          else
+            ..._buildActiveByTag(context, activeVisible, profileMap, me, today),
+        ] else ...[
+          if (completedFiltered.isEmpty)
+            _tabEmptyMessage(context, 'Nenhuma tarefa concluída ainda.')
+          else if (completedVisible.isEmpty)
+            _tabEmptyMessage(
+              context,
+              'Nenhuma tarefa concluída com esta etiqueta.',
+            )
+          else if (widget.group.typeConfig.continuous)
+            ..._buildCompletedByTag(
+              context,
+              completedVisible,
+              profileMap,
+              me,
+              today,
+            )
+          else
+            for (final task in completedVisible)
               Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 24),
-                child: Text(
-                  'Nenhuma tarefa concluída com esta etiqueta.',
-                  style: ExText.bodyLg(context.ex.textSecondary),
-                ),
-              )
-            else if (widget.group.typeConfig.continuous)
-              ..._buildCompletedByTag(
-                context,
-                completedVisible,
-                profileMap,
-                me,
-                today,
-              )
-            else
-              for (final task in completedVisible)
-                _completedTaskCard(context, task, profileMap, me, today),
-          ],
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _completedTaskCard(context, task, profileMap, me, today),
+              ),
         ],
       ],
+    );
+  }
+
+  /// Campo de busca em cápsula (surface2), alinhado ao mock.
+  Widget _buildSearchPill(BuildContext context, String hint) {
+    final c = context.ex;
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.only(left: 15, right: 6),
+      decoration: BoxDecoration(
+        color: c.surface2,
+        borderRadius: BorderRadius.circular(ExRadius.pill),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.search_rounded, size: 18, color: c.textMuted),
+          const SizedBox(width: ExSpace.s2),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              style: ExText.bodyLg(c.textPrimary),
+              cursorColor: c.textAccent,
+              decoration: InputDecoration(
+                isCollapsed: true,
+                border: InputBorder.none,
+                hintText: hint,
+                hintStyle: ExText.bodyLg(c.textMuted),
+              ),
+              textInputAction: TextInputAction.search,
+            ),
+          ),
+          if (_searchController.text.isNotEmpty)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              iconSize: 18,
+              icon: Icon(Icons.clear_rounded, color: c.textMuted),
+              onPressed: () => _searchController.clear(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _activeFilterRow(BuildContext context, TagModel? tag) {
+    final c = context.ex;
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(11, 6, 8, 6),
+          decoration: BoxDecoration(
+            color: ExColors.brandGreen.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(ExRadius.pill),
+            border: Border.all(color: c.borderAccent),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (tag != null) ...[
+                ExDot(color: Color(tag.color), size: 8),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                tag?.name ?? 'Etiqueta',
+                style: ExText.body(c.textAccent)
+                    .copyWith(fontWeight: FontWeight.w600, fontSize: 12),
+              ),
+              const SizedBox(width: 2),
+              InkWell(
+                onTap: () => setState(() {
+                  if (_tab == _GroupTaskTab.pending) {
+                    _activeFilterTagId = null;
+                  } else {
+                    _completedFilterTagId = null;
+                  }
+                }),
+                customBorder: const CircleBorder(),
+                child: Icon(Icons.close_rounded, size: 15, color: c.textAccent),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _tabEmptyMessage(BuildContext context, String message) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 24, 0, 24),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: ExText.bodyLg(context.ex.textSecondary),
+      ),
+    );
+  }
+}
+
+/// Botão de ação da barra de ferramentas (44×44, cápsula).
+class _ToolbarIconButton extends StatelessWidget {
+  const _ToolbarIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.background,
+    required this.onTap,
+    this.borderColor,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final Color background;
+  final Color? borderColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: background,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(ExRadius.pill),
+          side: borderColor != null
+              ? BorderSide(color: borderColor!)
+              : BorderSide.none,
+        ),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const StadiumBorder(),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(icon, size: 20, color: color),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pílula de aba (Pendentes / Concluídas) com contagem.
+class _TabPill extends StatelessWidget {
+  const _TabPill({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    final Color bg = selected ? c.textPrimary : c.surface2;
+    final Color fg = selected ? c.surface0 : c.textSecondary;
+    return Material(
+      color: bg,
+      shape: const StadiumBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 8),
+          child: Text(
+            '$label · $count',
+            style: ExText.body(fg).copyWith(
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Chip de escolha de etiqueta na folha de filtro.
+class _FilterChoiceChip extends StatelessWidget {
+  const _FilterChoiceChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.dotColor,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Color? dotColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.ex;
+    final Color fg = selected ? c.textAccent : c.textSecondary;
+    return Material(
+      color: selected
+          ? ExColors.brandGreen.withValues(alpha: 0.14)
+          : c.surface2,
+      shape: StadiumBorder(
+        side: BorderSide(color: selected ? c.borderAccent : c.border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (dotColor != null) ...[
+                ExDot(color: dotColor!, size: 8),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: ExText.body(fg)
+                    .copyWith(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
